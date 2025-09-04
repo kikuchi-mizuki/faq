@@ -38,9 +38,7 @@ RUN rm -rf tests/ sample_data/ __pycache__/ .git/
 # ポート設定
 EXPOSE $PORT
 
-# 環境変数設定
-ENV FLASK_APP=line_qa_system.app
-ENV FLASK_ENV=production
+# 環境変数はRailwayで設定されるため、ここでは設定しない
 
 # 起動コマンド
 CMD poetry run python start.py
