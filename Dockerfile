@@ -43,4 +43,4 @@ ENV FLASK_APP=line_qa_system.app
 ENV FLASK_ENV=production
 
 # 起動コマンド
-CMD poetry run python -m flask run --host=0.0.0.0 --port=$PORT
+CMD poetry run python start.py
