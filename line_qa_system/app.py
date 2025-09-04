@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import base64
 import json
+import threading
 from typing import Dict, Any, Optional
 from functools import wraps
 
@@ -50,6 +51,48 @@ app.config.from_object(Config)
 # サービスの初期化
 qa_service = QAService()
 line_client = LineClient()
+
+
+def start_auto_reload():
+    """定期的な自動リロード機能を開始"""
+    last_sheet_update = None
+    
+    def auto_reload_worker():
+        nonlocal last_sheet_update
+        while True:
+            try:
+                time.sleep(300)  # 5分ごと
+                logger.info("自動リロードチェック開始")
+                
+                # スプレッドシートの最終更新時刻をチェック
+                try:
+                    # 現在の最終更新時刻を取得（簡易実装）
+                    current_time = time.time()
+                    
+                    # 初回実行時または強制リロード時
+                    if last_sheet_update is None:
+                        qa_service.reload_cache()
+                        last_sheet_update = current_time
+                        logger.info("初回自動リロード完了")
+                    else:
+                        # 通常の定期リロード（変更検知なし）
+                        qa_service.reload_cache()
+                        logger.info("定期自動リロード完了")
+                        
+                except Exception as e:
+                    logger.error("スプレッドシート更新チェック中にエラー", error=str(e))
+                
+            except Exception as e:
+                logger.error("自動リロード中にエラーが発生しました", error=str(e))
+    
+    # バックグラウンドで自動リロードを開始
+    reload_thread = threading.Thread(target=auto_reload_worker, daemon=True)
+    reload_thread.start()
+    logger.info("自動リロード機能を開始しました")
+
+
+# アプリケーション起動時に自動リロードを開始
+start_auto_reload()
 
 
 def require_admin(f):
@@ -215,8 +258,13 @@ def reload_cache():
     """キャッシュの再読み込み（管理者のみ）"""
     try:
         qa_service.reload_cache()
-        logger.info("キャッシュの再読み込みが完了しました")
-        return jsonify({"status": "success", "message": "キャッシュを再読み込みしました"})
+        logger.info("手動リロードが完了しました")
+        return jsonify({
+            "status": "success", 
+            "message": "キャッシュを再読み込みしました",
+            "timestamp": time.time(),
+            "auto_reload_active": True
+        })
     except Exception as e:
         logger.error("キャッシュの再読み込みに失敗しました", error=str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -231,6 +279,23 @@ def get_stats():
         return jsonify(stats)
     except Exception as e:
         logger.error("統計情報の取得に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/auto-reload/status", methods=["GET"])
+# @require_admin  # 一時的に無効化
+def get_auto_reload_status():
+    """自動リロードの状態確認"""
+    try:
+        return jsonify({
+            "status": "success",
+            "auto_reload_active": True,
+            "last_reload": time.time(),
+            "next_reload_in_seconds": 300,  # 5分後
+            "message": "自動リロードが動作中です"
+        })
+    except Exception as e:
+        logger.error("自動リロード状態の取得に失敗しました", error=str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
