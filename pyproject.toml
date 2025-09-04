@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "line-qa-system"
+version = "0.1.0"
+description = "LINE Q&A自動応答システム（Googleスプレッドシート連携）"
+authors = ["mizuki kikuchi"]
+readme = "README.md"
+packages = [{include = "line_qa_system"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+flask = "^2.3.0"
+gspread = "^5.12.0"
+google-auth = "^2.23.0"
+rapidfuzz = "^3.5.0"
+sudachipy = "^0.6.7"
+sudachidict_core = "^20230927"
+python-dotenv = "^1.0.0"
+requests = "^2.31.0"
+cachetools = "^5.3.0"
+structlog = "^23.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^23.7.0"
+flake8 = "^6.0.0"
+mypy = "^1.5.0"
+pre-commit = "^3.3.0"
+
+[tool.poetry.scripts]
+start = "line_qa_system.app:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

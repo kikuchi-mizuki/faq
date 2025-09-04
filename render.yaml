@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: line-qa-system
+    env: python
+    plan: free
+    buildCommand: pip install poetry && poetry config virtualenvs.create false && poetry install --no-dev
+    startCommand: poetry run start
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+      - key: PORT
+        value: 5000
+    healthCheckPath: /healthz
+    autoDeploy: true
