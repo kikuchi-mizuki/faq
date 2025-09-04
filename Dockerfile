@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Poetryのインストール
-RUN pip install poetry
+RUN pip install poetry==1.7.1
 
 # Poetry設定
 RUN poetry config virtualenvs.create false
@@ -20,8 +20,9 @@ COPY poetry.lock ./
 # ファイルの存在確認
 RUN ls -la && echo "=== Files copied successfully ==="
 
-# 依存関係のインストール
-RUN poetry install --no-dev --no-interaction
+# Poetryで依存関係をエクスポートしてpipでインストール
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
+RUN pip install -r requirements.txt
 
 # アプリケーションコードのコピー
 COPY line_qa_system/ ./line_qa_system/
