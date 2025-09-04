@@ -4,7 +4,6 @@ Railway用起動スクリプト
 """
 
 import os
-import sys
 from line_qa_system.app import app
 
 if __name__ == '__main__':
@@ -22,12 +21,10 @@ if __name__ == '__main__':
     os.environ['FLASK_APP'] = 'line_qa_system.app'
     os.environ['FLASK_ENV'] = 'production'
     
-    # Flask CLIを使用してアプリケーション起動
-    sys.argv = ['flask', 'run', '--host=0.0.0.0', f'--port={port}']
-    
-    # Flaskアプリケーション起動
+    # Flaskアプリケーションを直接起動
     app.run(
         host='0.0.0.0',
         port=port,
-        debug=False
+        debug=False,
+        threaded=True
     )
