@@ -36,12 +36,11 @@ COPY *.yml ./
 RUN rm -rf tests/ sample_data/ __pycache__/ .git/
 
 # ポート設定
-EXPOSE 8000
+EXPOSE $PORT
 
 # 環境変数設定
 ENV FLASK_APP=line_qa_system.app
 ENV FLASK_ENV=production
-ENV PORT=8000
 
 # 起動コマンド
-CMD ["poetry", "run", "python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8000"]
+CMD poetry run python -m flask run --host=0.0.0.0 --port=$PORT
