@@ -14,7 +14,11 @@ RUN pip install poetry
 RUN poetry config virtualenvs.create false
 
 # 依存関係ファイルのコピー
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml ./
+COPY poetry.lock ./
+
+# ファイルの存在確認
+RUN ls -la && echo "=== Files copied successfully ==="
 
 # 依存関係のインストール
 RUN poetry install --no-dev --no-interaction

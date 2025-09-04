@@ -31,7 +31,7 @@ env.bak/
 venv.bak/
 
 # Poetry
-poetry.lock
+# poetry.lock  # 本番環境での依存関係ロックに必要
 
 # IDE
 .vscode/
