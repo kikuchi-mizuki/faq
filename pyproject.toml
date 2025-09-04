@@ -3,7 +3,6 @@ name = "line-qa-system"
 version = "0.1.0"
 description = "LINE Q&A自動応答システム（Googleスプレッドシート連携）"
 authors = ["mizuki kikuchi"]
-readme = "README.md"
 packages = [{include = "line_qa_system"}]
 
 [tool.poetry.dependencies]
@@ -28,7 +27,7 @@ mypy = "^1.5.0"
 pre-commit = "^3.3.0"
 
 [tool.poetry.scripts]
-start = "line_qa_system.app:main"
+start = "line_qa_system.app:app"
 
 [build-system]
 requires = ["poetry-core"]
