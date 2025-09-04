@@ -12,7 +12,4 @@ restartPolicyMaxRetries = 10
 FLASK_APP = "line_qa_system.app"
 FLASK_ENV = "production"
 PORT = "8000"
-
-[deploy.envs]
-FLASK_ENV = "production"
 DEBUG = "false"
