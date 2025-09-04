@@ -17,10 +17,18 @@ RUN poetry config virtualenvs.create false
 COPY pyproject.toml poetry.lock ./
 
 # 依存関係のインストール
-RUN poetry install --no-dev
+RUN poetry install --no-dev --no-interaction
 
 # アプリケーションコードのコピー
-COPY . .
+COPY line_qa_system/ ./line_qa_system/
+COPY *.py ./
+COPY *.md ./
+COPY *.toml ./
+COPY *.yaml ./
+COPY *.yml ./
+
+# 不要なファイルの削除
+RUN rm -rf tests/ sample_data/ __pycache__/ .git/
 
 # ポート設定
 EXPOSE 8000
