@@ -208,9 +208,8 @@ def process_text_message(event: Dict[str, Any], start_time: float):
 
 def format_answer(answer: str, question: str, tags: str) -> str:
     """回答のフォーマット"""
-    if tags:
-        return f"【回答】\n{answer}\n\n関連: {tags}"
-    return f"【回答】\n{answer}"
+    # シンプルにanswerだけを返す
+    return answer
 
 
 def format_candidates(candidates: list) -> str:
