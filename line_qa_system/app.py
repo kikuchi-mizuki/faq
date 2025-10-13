@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 
 from .line_client import LineClient
 from .qa_service import QAService
+from .session_service import SessionService
+from .flow_service import FlowService
 from .config import Config
 from .utils import verify_line_signature, hash_user_id
 
@@ -51,6 +53,8 @@ app.config.from_object(Config)
 # サービスの初期化
 qa_service = QAService()
 line_client = LineClient()
+session_service = SessionService()
+flow_service = FlowService(session_service)
 
 
 def start_auto_reload():
@@ -77,6 +81,7 @@ def start_auto_reload():
                     else:
                         # 通常の定期リロード（変更検知なし）
                         qa_service.reload_cache()
+                        flow_service.reload_flows()
                         logger.info("定期自動リロード完了")
                         
                 except Exception as e:
@@ -160,37 +165,98 @@ def process_text_message(event: Dict[str, Any], start_time: float):
     logger.info("メッセージを受信しました", user_id=hashed_user_id, text=message_text)
 
     try:
-        # Q&A検索
-        result = qa_service.find_answer(message_text)
+        # キャンセルコマンドのチェック
+        if message_text.strip().lower() in ["キャンセル", "cancel", "やめる", "終了"]:
+            if flow_service.is_in_flow(user_id):
+                flow_service.cancel_flow(user_id)
+                line_client.reply_text(reply_token, "会話をキャンセルしました。")
+                logger.info("フローをキャンセルしました", user_id=hashed_user_id)
+                return
+            else:
+                line_client.reply_text(reply_token, "現在、会話は進行していません。")
+                return
 
-        # 応答の送信
-        if result.is_found:
-            response_text = format_answer(result.answer, result.question, result.tags)
-            line_client.reply_text(reply_token, response_text)
+        # フロー中かどうかをチェック
+        if flow_service.is_in_flow(user_id):
+            # フロー中の場合は選択を処理
+            next_flow, is_end = flow_service.process_user_choice(user_id, message_text)
 
-            logger.info(
-                "回答を送信しました",
-                user_id=hashed_user_id,
-                question_id=result.id,
-                score=result.score,
-            )
+            if next_flow:
+                # 次のステップがある場合
+                if is_end:
+                    # 終了ステップ（回答）
+                    line_client.reply_text(reply_token, next_flow.question)
+                    logger.info("フロー終了", user_id=hashed_user_id)
+                else:
+                    # 次の質問を提示（クイックリプライ付き）
+                    options = next_flow.option_list
+                    line_client.reply_text(
+                        reply_token, next_flow.question, quick_reply=options if options else None
+                    )
+                    logger.info(
+                        "次のステップへ進みました", user_id=hashed_user_id, step=next_flow.step
+                    )
+            else:
+                # フローが見つからない場合
+                line_client.reply_text(
+                    reply_token,
+                    "申し訳ございません。処理中にエラーが発生しました。最初からやり直してください。",
+                )
+                flow_service.cancel_flow(user_id)
+                logger.warning("フロー処理に失敗しました", user_id=hashed_user_id)
+
         else:
-            # 候補がある場合は候補を提示
-            if result.candidates:
-                response_text = format_candidates(result.candidates)
+            # フロー外の場合は通常のQ&A検索
+            # まず、フローのトリガーかどうかをチェック
+            available_triggers = flow_service.get_available_triggers()
+            for trigger in available_triggers:
+                if trigger.lower() in message_text.lower():
+                    # フローを開始
+                    flow = flow_service.start_flow(user_id, trigger)
+                    if flow:
+                        # 最初の質問を送信（クイックリプライ付き）
+                        options = flow.option_list
+                        line_client.reply_text(
+                            reply_token,
+                            flow.question,
+                            quick_reply=options if options else None,
+                        )
+                        logger.info(
+                            "フローを開始しました", user_id=hashed_user_id, trigger=trigger
+                        )
+                        return
+
+            # フローに該当しない場合は通常のQ&A検索
+            result = qa_service.find_answer(message_text)
+
+            # 応答の送信
+            if result.is_found:
+                response_text = format_answer(result.answer, result.question, result.tags)
                 line_client.reply_text(reply_token, response_text)
 
                 logger.info(
-                    "候補を提示しました",
+                    "回答を送信しました",
                     user_id=hashed_user_id,
-                    candidate_count=len(result.candidates),
+                    question_id=result.id,
+                    score=result.score,
                 )
             else:
-                # フォールバック応答
-                fallback_text = get_fallback_response()
-                line_client.reply_text(reply_token, fallback_text)
+                # 候補がある場合は候補を提示
+                if result.candidates:
+                    response_text = format_candidates(result.candidates)
+                    line_client.reply_text(reply_token, response_text)
 
-                logger.info("フォールバック応答を送信しました", user_id=hashed_user_id)
+                    logger.info(
+                        "候補を提示しました",
+                        user_id=hashed_user_id,
+                        candidate_count=len(result.candidates),
+                    )
+                else:
+                    # フォールバック応答
+                    fallback_text = get_fallback_response()
+                    line_client.reply_text(reply_token, fallback_text)
+
+                    logger.info("フォールバック応答を送信しました", user_id=hashed_user_id)
 
         # 処理時間の記録
         latency = int((time.time() - start_time) * 1000)
@@ -257,10 +323,11 @@ def reload_cache():
     """キャッシュの再読み込み（管理者のみ）"""
     try:
         qa_service.reload_cache()
+        flow_service.reload_flows()
         logger.info("手動リロードが完了しました")
         return jsonify({
             "status": "success", 
-            "message": "キャッシュを再読み込みしました",
+            "message": "キャッシュを再読み込みしました（Q&A + フロー）",
             "timestamp": time.time(),
             "auto_reload_active": True
         })

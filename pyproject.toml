@@ -17,6 +17,7 @@ python-dotenv = "^1.0.0"
 requests = "^2.31.0"
 cachetools = "^5.3.0"
 structlog = "^23.2.0"
+redis = "^5.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

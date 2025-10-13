@@ -21,6 +21,12 @@ class Config:
     GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
     SHEET_ID_QA = os.environ.get("SHEET_ID_QA", "")
 
+    # Redis設定
+    REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+    REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
+    REDIS_DB = int(os.environ.get("REDIS_DB", "0"))
+
     # キャッシュ設定
     CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
 

@@ -2,8 +2,8 @@
 データモデル定義
 """
 
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
@@ -172,3 +172,105 @@ class SystemStats:
             "successful_matches": self.successful_matches,
             "last_updated": self.last_updated.isoformat(),
         }
+
+
+@dataclass
+class FlowItem:
+    """分岐会話フローのデータ構造"""
+
+    id: int
+    trigger: str
+    step: int
+    question: str
+    options: str
+    next_step: str
+    end: bool
+    fallback_next: int
+    updated_at: datetime
+
+    def __post_init__(self):
+        """初期化後の処理"""
+        # 文字列フィールドの正規化
+        if self.trigger:
+            self.trigger = self.trigger.strip()
+        if self.question:
+            self.question = self.question.strip()
+        if self.options:
+            self.options = self.options.strip()
+        if self.next_step:
+            self.next_step = self.next_step.strip()
+
+    @property
+    def is_end_step(self) -> bool:
+        """終了ステップかどうか"""
+        return self.end
+
+    @property
+    def option_list(self) -> List[str]:
+        """選択肢のリスト"""
+        if not self.options:
+            return []
+        return [opt.strip() for opt in self.options.split("／") if opt.strip()]
+
+    @property
+    def next_step_list(self) -> List[int]:
+        """次ステップのリスト"""
+        if not self.next_step:
+            return []
+        try:
+            return [int(step.strip()) for step in self.next_step.split("／") if step.strip()]
+        except ValueError:
+            return []
+
+    def get_next_step_for_option(self, option_index: int) -> Optional[int]:
+        """
+        選択肢のインデックスに対応する次のステップを取得
+
+        Args:
+            option_index: 選択肢のインデックス（0始まり）
+
+        Returns:
+            次のステップ番号（見つからない場合はfallback_next）
+        """
+        next_steps = self.next_step_list
+        if 0 <= option_index < len(next_steps):
+            return next_steps[option_index]
+        return self.fallback_next
+
+
+@dataclass
+class ConversationState:
+    """会話状態のデータ構造"""
+
+    user_id: str
+    flow_id: int
+    current_step: int
+    trigger: str
+    context: Dict[str, Any] = field(default_factory=dict)
+    started_at: datetime = field(default_factory=datetime.now)
+    last_updated: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
+        return {
+            "user_id": self.user_id,
+            "flow_id": self.flow_id,
+            "current_step": self.current_step,
+            "trigger": self.trigger,
+            "context": self.context,
+            "started_at": self.started_at.isoformat(),
+            "last_updated": self.last_updated.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ConversationState":
+        """辞書から復元"""
+        return cls(
+            user_id=data["user_id"],
+            flow_id=data["flow_id"],
+            current_step=data["current_step"],
+            trigger=data["trigger"],
+            context=data.get("context", {}),
+            started_at=datetime.fromisoformat(data["started_at"]),
+            last_updated=datetime.fromisoformat(data["last_updated"]),
+        )

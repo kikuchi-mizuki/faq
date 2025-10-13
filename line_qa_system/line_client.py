@@ -24,21 +24,30 @@ class LineClient:
             "Content-Type": "application/json",
         }
 
-    def reply_text(self, reply_token: str, text: str) -> bool:
+    def reply_text(
+        self, reply_token: str, text: str, quick_reply: Optional[List[str]] = None
+    ) -> bool:
         """
         テキストメッセージを返信
 
         Args:
             reply_token: 返信トークン
             text: 返信テキスト
+            quick_reply: クイックリプライの選択肢リスト（オプション）
 
         Returns:
             成功時はTrue
         """
         try:
+            message = {"type": "text", "text": text}
+
+            # クイックリプライがある場合は追加
+            if quick_reply:
+                message["quickReply"] = self._create_quick_reply_items(quick_reply)
+
             payload = {
                 "replyToken": reply_token,
-                "messages": [{"type": "text", "text": text}],
+                "messages": [message],
             }
 
             response = requests.post(
@@ -269,3 +278,23 @@ class LineClient:
         except Exception as e:
             logger.error("トークン検証中にエラーが発生しました", error=str(e))
             return False
+
+    def _create_quick_reply_items(self, options: List[str]) -> Dict[str, Any]:
+        """
+        クイックリプライアイテムを作成
+
+        Args:
+            options: 選択肢のリスト
+
+        Returns:
+            クイックリプライオブジェクト
+        """
+        items = []
+        for option in options[:13]:  # LINEの制限：最大13個
+            items.append(
+                {
+                    "type": "action",
+                    "action": {"type": "message", "label": option, "text": option},
+                }
+            )
+        return {"items": items}
