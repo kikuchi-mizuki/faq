@@ -51,10 +51,33 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 # サービスの初期化
-qa_service = QAService()
-line_client = LineClient()
-session_service = SessionService()
-flow_service = FlowService(session_service)
+try:
+    logger.info("サービスの初期化を開始します")
+    
+    qa_service = QAService()
+    logger.info("QAServiceの初期化が完了しました")
+    
+    line_client = LineClient()
+    logger.info("LineClientの初期化が完了しました")
+    
+    session_service = SessionService()
+    logger.info("SessionServiceの初期化が完了しました")
+    
+    flow_service = FlowService(session_service)
+    logger.info("FlowServiceの初期化が完了しました")
+    
+    logger.info("全てのサービスの初期化が完了しました")
+    
+except Exception as e:
+    logger.error("サービスの初期化中にエラーが発生しました", error=str(e), exc_info=True)
+    import sys
+    import traceback
+    print(f"❌ 致命的エラー: サービス初期化に失敗しました")
+    print(f"エラー: {e}")
+    print("=== トレースバック ===")
+    traceback.print_exc()
+    print("環境変数を確認してください（GOOGLE_SERVICE_ACCOUNT_JSON, SHEET_ID_QA等）")
+    sys.exit(1)
 
 
 def start_auto_reload():
