@@ -23,6 +23,8 @@ RUN ls -la && echo "=== Files copied successfully ==="
 # Poetryで依存関係をエクスポートしてpipでインストール
 RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
 RUN pip install -r requirements.txt
+# STEP2で追加されたredisパッケージを明示的にインストール
+RUN pip install redis==5.0.0
 
 # アプリケーションコードのコピー
 COPY line_qa_system/ ./line_qa_system/
