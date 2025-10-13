@@ -274,3 +274,80 @@ class ConversationState:
             started_at=datetime.fromisoformat(data["started_at"]),
             last_updated=datetime.fromisoformat(data["last_updated"]),
         )
+
+
+@dataclass
+class LocationItem:
+    """資料ナビゲーションアイテムのデータ構造（STEP3）"""
+
+    id: int
+    category: str
+    title: str
+    url: str
+    description: str
+    tags: str
+    updated_at: datetime
+
+    def __post_init__(self):
+        """初期化後の処理"""
+        # 文字列フィールドの正規化
+        if self.category:
+            self.category = self.category.strip()
+        if self.title:
+            self.title = self.title.strip()
+        if self.url:
+            self.url = self.url.strip()
+        if self.description:
+            self.description = self.description.strip()
+        if self.tags:
+            self.tags = self.tags.strip()
+
+    @property
+    def tag_list(self) -> List[str]:
+        """タグのリスト"""
+        if not self.tags:
+            return []
+        return [tag.strip() for tag in self.tags.split(",") if tag.strip()]
+
+
+@dataclass
+class QAFormLog:
+    """Googleフォーム投稿ログのデータ構造（STEP3）"""
+
+    id: int
+    timestamp: datetime
+    question: str
+    answer: str
+    category: str
+    keywords: str
+    approved: bool
+    created_by: str
+    notes: str
+
+    def __post_init__(self):
+        """初期化後の処理"""
+        # 文字列フィールドの正規化
+        if self.question:
+            self.question = self.question.strip()
+        if self.answer:
+            self.answer = self.answer.strip()
+        if self.category:
+            self.category = self.category.strip()
+        if self.keywords:
+            self.keywords = self.keywords.strip()
+        if self.created_by:
+            self.created_by = self.created_by.strip()
+        if self.notes:
+            self.notes = self.notes.strip()
+
+    @property
+    def is_approved(self) -> bool:
+        """承認済みかどうか"""
+        return self.approved
+
+    @property
+    def keyword_list(self) -> List[str]:
+        """キーワードのリスト"""
+        if not self.keywords:
+            return []
+        return [kw.strip() for kw in self.keywords.split(",") if kw.strip()]

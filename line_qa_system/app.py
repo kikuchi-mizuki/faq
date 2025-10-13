@@ -20,6 +20,7 @@ from .line_client import LineClient
 from .qa_service import QAService
 from .session_service import SessionService
 from .flow_service import FlowService
+from .location_service import LocationService
 from .config import Config
 from .utils import verify_line_signature, hash_user_id
 
@@ -66,6 +67,9 @@ try:
     flow_service = FlowService(session_service)
     logger.info("FlowServiceの初期化が完了しました")
     
+    location_service = LocationService()
+    logger.info("LocationServiceの初期化が完了しました")
+    
     logger.info("全てのサービスの初期化が完了しました")
     
 except Exception as e:
@@ -105,6 +109,8 @@ def start_auto_reload():
                         # 通常の定期リロード（変更検知なし）
                         qa_service.reload_cache()
                         flow_service.reload_flows()
+                        location_service.reload_locations()
+                        location_service.reload_form_logs()
                         logger.info("定期自動リロード完了")
                         
                 except Exception as e:
@@ -275,11 +281,25 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                         candidate_count=len(result.candidates),
                     )
                 else:
-                    # フォールバック応答
-                    fallback_text = get_fallback_response()
-                    line_client.reply_text(reply_token, fallback_text)
+                    # Q&Aに該当しない場合は資料検索を試みる（STEP3）
+                    locations = location_service.search_locations(message_text)
+                    
+                    if locations:
+                        # 資料が見つかった場合
+                        response_text = format_locations(locations)
+                        line_client.reply_text(reply_token, response_text)
+                        
+                        logger.info(
+                            "資料を提示しました",
+                            user_id=hashed_user_id,
+                            location_count=len(locations),
+                        )
+                    else:
+                        # フォールバック応答
+                        fallback_text = get_fallback_response()
+                        line_client.reply_text(reply_token, fallback_text)
 
-                    logger.info("フォールバック応答を送信しました", user_id=hashed_user_id)
+                        logger.info("フォールバック応答を送信しました", user_id=hashed_user_id)
 
         # 処理時間の記録
         latency = int((time.time() - start_time) * 1000)
@@ -308,6 +328,22 @@ def format_candidates(candidates: list) -> str:
         tags_text = f" ({candidate.tags})" if candidate.tags else ""
         text += f"{i}. {candidate.question}{tags_text}\n"
     text += "\nより具体的なキーワードをお試しください。"
+    return text
+
+
+def format_locations(locations: list) -> str:
+    """資料のフォーマット（STEP3）"""
+    text = "📚 関連資料が見つかりました：\n\n"
+    for i, location in enumerate(locations[:3], 1):
+        text += f"{i}. {location.title}\n"
+        text += f"   カテゴリ: {location.category}\n"
+        if location.description:
+            text += f"   {location.description}\n"
+        text += f"   🔗 {location.url}\n\n"
+    
+    if len(locations) > 3:
+        text += f"他 {len(locations) - 3}件の資料があります。\n"
+    
     return text
 
 
@@ -347,10 +383,12 @@ def reload_cache():
     try:
         qa_service.reload_cache()
         flow_service.reload_flows()
+        location_service.reload_locations()
+        location_service.reload_form_logs()
         logger.info("手動リロードが完了しました")
         return jsonify({
             "status": "success", 
-            "message": "キャッシュを再読み込みしました（Q&A + フロー）",
+            "message": "キャッシュを再読み込みしました（Q&A + フロー + 資料）",
             "timestamp": time.time(),
             "auto_reload_active": True
         })
@@ -364,8 +402,23 @@ def reload_cache():
 def get_stats():
     """統計情報の取得（管理者のみ）"""
     try:
-        stats = qa_service.get_stats()
-        return jsonify(stats)
+        qa_stats = qa_service.get_stats()
+        
+        # STEP3: 資料・フォームログの統計を追加
+        location_stats = {
+            "total_locations": len(location_service.locations),
+            "total_categories": len(location_service.get_categories()),
+            "total_form_logs": len(location_service.form_logs),
+            "pending_form_logs": len(location_service.get_pending_form_logs()),
+            "approved_form_logs": len(location_service.get_approved_form_logs()),
+        }
+        
+        # 統計を結合
+        combined_stats = qa_stats.to_dict()
+        combined_stats["locations"] = location_stats
+        combined_stats["total_flows"] = len(flow_service.flows)
+        
+        return jsonify(combined_stats)
     except Exception as e:
         logger.error("統計情報の取得に失敗しました", error=str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
