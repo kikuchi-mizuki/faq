@@ -14,6 +14,7 @@ from google.oauth2.service_account import Credentials
 from .models import FlowItem, ConversationState
 from .config import Config
 from .session_service import SessionService
+from .ai_service import AIService
 
 logger = structlog.get_logger(__name__)
 
@@ -27,6 +28,9 @@ class FlowService:
         self.session_service = session_service
         self.flows: List[FlowItem] = []
         self.last_updated = datetime.now()
+
+        # AIサービスの初期化
+        self.ai_service = AIService()
 
         # Google Sheets APIの初期化
         self._init_google_sheets()
@@ -235,9 +239,12 @@ class FlowService:
             # 選択肢のインデックスを取得
             options = current_flow.option_list
             option_index = -1
+            selected_option = None
+            
             for i, option in enumerate(options):
                 if option.lower() in choice.lower() or choice.lower() in option.lower():
                     option_index = i
+                    selected_option = option
                     break
 
             if option_index == -1:
@@ -248,14 +255,37 @@ class FlowService:
                 # 次のステップ番号を取得
                 next_step_number = current_flow.get_next_step_for_option(option_index)
 
+            # ユーザーの選択をコンテキストに保存
+            if selected_option:
+                state.context[f"step_{state.current_step}_choice"] = selected_option
+                state.context[f"step_{state.current_step}_choice_text"] = choice
+
             # 次のフローを取得
             next_flow = self.get_flow_by_trigger(state.trigger, next_step_number)
 
             if not next_flow:
                 logger.info("フロー終了", user_id=user_id, trigger=state.trigger)
+                
+                # AI回答を生成
+                ai_response = self._generate_ai_response(state)
+                
                 # セッションをクリア
                 self.session_service.delete_session(user_id)
-                return None, True
+                
+                # AI回答を含む仮想的なフローアイテムを返す
+                ai_flow = FlowItem(
+                    id=999,
+                    trigger=state.trigger,
+                    step=999,
+                    question=ai_response,
+                    options="",
+                    next_step="",
+                    end=True,
+                    fallback_next=999,
+                    updated_at=datetime.now()
+                )
+                
+                return ai_flow, True
 
             # 終了ステップの場合
             if next_flow.is_end_step:
@@ -322,4 +352,31 @@ class FlowService:
             if flow.step == 1:  # ステップ1（開始ステップ）のみ
                 triggers.add(flow.trigger)
         return sorted(list(triggers))
+
+    def _generate_ai_response(self, state: ConversationState) -> str:
+        """AI回答を生成"""
+        try:
+            # ユーザーの選択履歴を整理
+            user_choices = {}
+            
+            # 各ステップの選択を抽出
+            for key, value in state.context.items():
+                if key.startswith("step_") and key.endswith("_choice"):
+                    step_num = key.split("_")[1]
+                    user_choices[f"step_{step_num}"] = value
+            
+            # AI回答を生成
+            ai_response = self.ai_service.generate_flow_response(
+                trigger=state.trigger,
+                step=state.current_step,
+                user_choices=user_choices,
+                is_final=True
+            )
+            
+            logger.info("AI回答を生成しました", user_id=state.user_id, trigger=state.trigger)
+            return ai_response
+            
+        except Exception as e:
+            logger.error("AI回答生成中にエラーが発生しました", error=str(e))
+            return "申し訳ございません。回答を生成できませんでした。"
 
