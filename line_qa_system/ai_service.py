@@ -194,7 +194,7 @@ class AIService:
             
             # Gemini APIの設定
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.model = genai.GenerativeModel('gemini-1.5-flash-001')
             self.is_enabled = True
             logger.info("Gemini APIの初期化が完了しました")
             

@@ -101,7 +101,7 @@ class RAGService:
             # Gemini APIのみを使用したRAG機能
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-001')
                 logger.warning("代替RAG機能（Geminiのみ）を初期化しました")
                 self.is_enabled = True
             else:
@@ -160,7 +160,7 @@ class RAGService:
             # Gemini APIの初期化
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-001')
                 logger.info("Gemini APIを初期化しました")
             
             self.is_enabled = True

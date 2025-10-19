@@ -470,12 +470,21 @@ class QAService:
             gc = gspread.authorize(credentials)
             spreadsheet = gc.open_by_key(self.sheet_id)
             
-            # qa_listシートを取得
-            qa_list_sheet = spreadsheet.worksheet('qa_list')
-            data = qa_list_sheet.get_all_records()
-            
-            logger.info(f"qa_listシートから{len(data)}件のデータを読み込みました")
-            return data
+            # qa_listシートの存在確認
+            try:
+                qa_list_sheet = spreadsheet.worksheet('qa_list')
+                data = qa_list_sheet.get_all_records()
+                
+                if not data:
+                    logger.warning("qa_listシートは存在しますが、データが空です")
+                    return []
+                
+                logger.info(f"qa_listシートから{len(data)}件のデータを読み込みました")
+                return data
+                
+            except gspread.WorksheetNotFound:
+                logger.warning("qa_listシートが見つかりません。シートを作成するか、既存のシート名を確認してください")
+                return []
             
         except Exception as e:
             logger.error("qa_listシートの読み込み中にエラーが発生しました", error=str(e))
