@@ -46,7 +46,14 @@ class DocumentCollector:
                 logger.error("GOOGLE_SERVICE_ACCOUNT_JSON環境変数が設定されていません")
                 return None
             
-            credentials_info = json.loads(service_account_json)
+            # JSON形式の検証
+            try:
+                credentials_info = json.loads(service_account_json)
+            except json.JSONDecodeError as e:
+                logger.error("GOOGLE_SERVICE_ACCOUNT_JSONの形式が正しくありません", error=str(e))
+                logger.info("RAG機能の文書収集は無効化されます。基本機能のみ利用可能です。")
+                return None
+            
             credentials = Credentials.from_service_account_info(
                 credentials_info,
                 scopes=[
@@ -61,6 +68,7 @@ class DocumentCollector:
             
         except Exception as e:
             logger.error("Google認証情報の取得に失敗しました", error=str(e))
+            logger.info("RAG機能の文書収集は無効化されます。基本機能のみ利用可能です。")
             return None
 
     def collect_all_documents(self) -> bool:

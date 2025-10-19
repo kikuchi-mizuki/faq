@@ -90,11 +90,19 @@ class RAGService:
         """データベースの初期化"""
         try:
             self.db_connection = psycopg2.connect(self.database_url)
+            logger.info("データベース接続を確立しました")
             
-            # pgvector拡張の確認
-            with self.db_connection.cursor() as cursor:
-                cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-                self.db_connection.commit()
+            # pgvector拡張の確認（エラーハンドリング付き）
+            try:
+                with self.db_connection.cursor() as cursor:
+                    cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+                    self.db_connection.commit()
+                    logger.info("pgvector拡張機能を有効化しました")
+            except Exception as e:
+                logger.warning("pgvector拡張機能の有効化に失敗しました", error=str(e))
+                logger.info("RAG機能は無効化されます。基本機能のみ利用可能です。")
+                self.is_enabled = False
+                return
                 
             # テーブルの作成
             self.create_tables()
@@ -104,6 +112,7 @@ class RAGService:
         except Exception as e:
             logger.error("データベース接続に失敗しました", error=str(e))
             self.db_connection = None
+            self.is_enabled = False
 
     def create_tables(self):
         """必要なテーブルを作成"""
