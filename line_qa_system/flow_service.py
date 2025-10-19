@@ -23,11 +23,12 @@ logger = structlog.get_logger(__name__)
 class FlowService:
     """分岐会話フローサービス"""
 
-    def __init__(self, session_service: SessionService, qa_service: QAService = None):
+    def __init__(self, session_service: SessionService, qa_service: QAService = None, rag_service=None):
         """初期化"""
         self.sheet_id = Config.SHEET_ID_QA
         self.session_service = session_service
         self.qa_service = qa_service
+        self.rag_service = rag_service
         self.flows: List[FlowItem] = []
         self.last_updated = datetime.now()
 
@@ -387,7 +388,21 @@ class FlowService:
                 else:
                     logger.info("qa_listから該当する回答が見つかりませんでした", user_id=state.user_id)
             
-            # フォールバック: 通常のAI回答生成
+            # フォールバック: RAG機能を使用したAI回答生成
+            if hasattr(self, 'rag_service') and self.rag_service and self.rag_service.is_enabled:
+                try:
+                    # RAG機能を使用した回答生成
+                    rag_response = self.rag_service.generate_answer(
+                        query=search_query,
+                        context=f"フロー: {state.trigger}, 選択: {user_choices}"
+                    )
+                    if rag_response:
+                        logger.info("RAG機能を使用したAI回答を生成しました", user_id=state.user_id, trigger=state.trigger)
+                        return rag_response
+                except Exception as e:
+                    logger.error("RAG機能での回答生成に失敗しました", error=str(e))
+            
+            # 最終フォールバック: 通常のAI回答生成
             ai_response = self.ai_service.generate_flow_response(
                 trigger=state.trigger,
                 step=state.current_step,
