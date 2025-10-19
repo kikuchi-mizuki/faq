@@ -144,6 +144,40 @@ class FlowService:
                 return flow
         return None
 
+    def find_flow_by_natural_language(self, user_input: str) -> Optional[FlowItem]:
+        """
+        自然言語でフローを検索
+        
+        Args:
+            user_input: ユーザーの入力
+            
+        Returns:
+            該当するフローアイテム（見つからない場合はNone）
+        """
+        user_input_lower = user_input.lower()
+        
+        # キーワードマッピング
+        keyword_mappings = {
+            "制作依頼": ["制作", "依頼", "動画", "制作したい", "依頼したい", "制作を依頼", "動画制作"],
+            "料金相談": ["料金", "費用", "価格", "お金", "いくら", "料金相談", "費用相談"],
+            "修正相談": ["修正", "変更", "直し", "修正したい", "変更したい", "修正相談"],
+            "プラン相談": ["プラン", "プラン相談", "プランについて", "プランを知りたい"],
+            "サポート": ["サポート", "ヘルプ", "困った", "問題", "エラー", "サポートが必要"],
+            "よくある質問": ["質問", "よくある質問", "FAQ", "疑問", "知りたい"]
+        }
+        
+        # 各トリガーに対してキーワードマッチング
+        for trigger, keywords in keyword_mappings.items():
+            for keyword in keywords:
+                if keyword in user_input_lower:
+                    # ステップ1のフローを取得
+                    flow = self.get_flow_by_trigger(trigger, step=1)
+                    if flow:
+                        logger.info(f"自然言語マッチング成功: '{user_input}' -> '{trigger}'")
+                        return flow
+        
+        return None
+
     def get_flow_by_id(self, flow_id: int) -> Optional[FlowItem]:
         """
         IDでフローを取得
