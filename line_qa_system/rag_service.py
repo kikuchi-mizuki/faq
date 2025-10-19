@@ -57,37 +57,30 @@ class RAGService:
         self.gemini_model = None
         
         # シンプルな初期化ロジック
-        self._try_initialize_full_rag()
+        self._initialize_rag_service()
         
-        # 完全RAG機能が失敗した場合、代替RAG機能を試行
-        if not self.is_enabled:
-            logger.info("完全RAG機能の初期化に失敗したため、代替RAG機能を初期化します")
-            self._initialize_fallback_rag()
+        # デバッグ用ログ
+        logger.info(f"RAGService初期化完了: is_enabled={self.is_enabled}")
 
-    def _try_initialize_full_rag(self):
-        """完全RAG機能の初期化を試行"""
+    def _initialize_rag_service(self):
+        """RAGサービスの初期化（シンプル版）"""
         try:
-            logger.info("完全RAG機能の初期化を開始します")
+            logger.info("RAGサービスの初期化を開始します")
             
-            # データベース接続の初期化
-            if self.database_url:
-                self._init_database()
-                if not self.is_enabled:
-                    logger.info("データベース初期化に失敗したため、完全RAG機能は無効化されます")
-                    return
+            # データベース接続の初期化を試行
+            database_success = self._try_database_connection()
             
-            # Gemini APIの初期化
-            if self.gemini_api_key:
-                genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-                logger.info("Gemini APIを初期化しました")
-            
-            # 全ての初期化が成功した場合
-            self.is_enabled = True
-            logger.info("完全RAG機能の初期化が完了しました")
+            if database_success:
+                # データベース接続が成功した場合、完全RAG機能を初期化
+                logger.info("データベース接続が成功したため、完全RAG機能を初期化します")
+                self._initialize_full_rag()
+            else:
+                # データベース接続が失敗した場合、代替RAG機能を初期化
+                logger.info("データベース接続が失敗したため、代替RAG機能を初期化します")
+                self._initialize_fallback_rag()
             
         except Exception as e:
-            logger.error("完全RAG機能の初期化に失敗しました", error=str(e))
+            logger.error("RAGサービスの初期化に失敗しました", error=str(e))
             self.is_enabled = False
 
     def _initialize_fallback_rag(self):
@@ -110,42 +103,51 @@ class RAGService:
             logger.info("代替RAG機能は無効化されます。基本機能のみ利用可能です。")
             self.is_enabled = False
 
-    def _init_database(self):
-        """データベースの初期化"""
+    def _try_database_connection(self):
+        """データベース接続を試行（成功/失敗を返す）"""
         try:
             self.db_connection = psycopg2.connect(self.database_url)
             logger.info("データベース接続を確立しました")
             
-            # pgvector拡張の確認（エラーハンドリング付き）
-            try:
-                with self.db_connection.cursor() as cursor:
-                    # まず利用可能な拡張機能を確認
-                    cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
-                    available_extensions = cursor.fetchall()
-                    logger.info(f"Available extensions: {available_extensions}")
-                    
-                    if not available_extensions:
-                        logger.warning("pgvector拡張機能が利用できません")
-                        self.is_enabled = False
-                        return
-                    
-                    # pgvector拡張機能の有効化を試行
-                    cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-                    self.db_connection.commit()
-                    logger.info("pgvector拡張機能を有効化しました")
-            except Exception as e:
-                logger.warning("pgvector拡張機能の有効化に失敗しました", error=str(e))
-                self.is_enabled = False
-                return
+            # pgvector拡張の確認
+            with self.db_connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
+                available_extensions = cursor.fetchall()
+                logger.info(f"Available extensions: {available_extensions}")
                 
+                if not available_extensions:
+                    logger.warning("pgvector拡張機能が利用できません")
+                    return False
+                
+                # pgvector拡張機能の有効化を試行
+                cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+                self.db_connection.commit()
+                logger.info("pgvector拡張機能を有効化しました")
+            
             # テーブルの作成
             self.create_tables()
-                
             logger.info("データベース接続が確立されました")
+            return True
             
         except Exception as e:
             logger.error("データベース接続に失敗しました", error=str(e))
             self.db_connection = None
+            return False
+
+    def _initialize_full_rag(self):
+        """完全RAG機能の初期化"""
+        try:
+            # Gemini APIの初期化
+            if self.gemini_api_key:
+                genai.configure(api_key=self.gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                logger.info("Gemini APIを初期化しました")
+            
+            self.is_enabled = True
+            logger.info("完全RAG機能の初期化が完了しました")
+            
+        except Exception as e:
+            logger.error("完全RAG機能の初期化に失敗しました", error=str(e))
             self.is_enabled = False
 
     def create_tables(self):
