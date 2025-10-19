@@ -202,13 +202,17 @@ def process_text_message(event: Dict[str, Any], start_time: float):
 
     try:
         # サービスが初期化されていない場合は初期化を試行
-        if qa_service is None:
+        if qa_service is None or line_client is None:
             initialize_services()
         
         # サービスが初期化されていない場合はエラーメッセージを返す
         if qa_service is None or line_client is None:
-            line_client = LineClient()  # 最低限の初期化
-            line_client.reply_text(reply_token, "申し訳ございません。システムの初期化中です。しばらくお待ちください。")
+            try:
+                # 最低限のLineClientを初期化
+                temp_line_client = LineClient()
+                temp_line_client.reply_text(reply_token, "申し訳ございません。システムの初期化中です。しばらくお待ちください。")
+            except Exception as e:
+                logger.error("エラーメッセージの送信に失敗しました", error=str(e))
             return
         # キャンセルコマンドのチェック
         if message_text.strip().lower() in ["キャンセル", "cancel", "やめる", "終了"]:
