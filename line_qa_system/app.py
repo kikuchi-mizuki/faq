@@ -51,37 +51,44 @@ logger = structlog.get_logger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# サービスの初期化
-try:
-    logger.info("サービスの初期化を開始します")
+# サービスの初期化（遅延初期化）
+qa_service = None
+line_client = None
+session_service = None
+flow_service = None
+location_service = None
+
+def initialize_services():
+    """サービスの初期化（遅延初期化）"""
+    global qa_service, line_client, session_service, flow_service, location_service
     
-    qa_service = QAService()
-    logger.info("QAServiceの初期化が完了しました")
+    if qa_service is not None:
+        return  # 既に初期化済み
     
-    line_client = LineClient()
-    logger.info("LineClientの初期化が完了しました")
-    
-    session_service = SessionService()
-    logger.info("SessionServiceの初期化が完了しました")
-    
-    flow_service = FlowService(session_service)
-    logger.info("FlowServiceの初期化が完了しました")
-    
-    location_service = LocationService()
-    logger.info("LocationServiceの初期化が完了しました")
-    
-    logger.info("全てのサービスの初期化が完了しました")
-    
-except Exception as e:
-    logger.error("サービスの初期化中にエラーが発生しました", error=str(e), exc_info=True)
-    import sys
-    import traceback
-    print(f"❌ 致命的エラー: サービス初期化に失敗しました")
-    print(f"エラー: {e}")
-    print("=== トレースバック ===")
-    traceback.print_exc()
-    print("環境変数を確認してください（GOOGLE_SERVICE_ACCOUNT_JSON, SHEET_ID_QA等）")
-    sys.exit(1)
+    try:
+        logger.info("サービスの初期化を開始します")
+        
+        qa_service = QAService()
+        logger.info("QAServiceの初期化が完了しました")
+        
+        line_client = LineClient()
+        logger.info("LineClientの初期化が完了しました")
+        
+        session_service = SessionService()
+        logger.info("SessionServiceの初期化が完了しました")
+        
+        flow_service = FlowService(session_service)
+        logger.info("FlowServiceの初期化が完了しました")
+        
+        location_service = LocationService()
+        logger.info("LocationServiceの初期化が完了しました")
+        
+        logger.info("全てのサービスの初期化が完了しました")
+        
+    except Exception as e:
+        logger.error("サービスの初期化中にエラーが発生しました", error=str(e), exc_info=True)
+        # エラーが発生してもアプリケーションは起動する
+        logger.warning("一部のサービスが初期化できませんでした。基本機能のみ利用可能です。")
 
 
 def start_auto_reload():
@@ -194,6 +201,15 @@ def process_text_message(event: Dict[str, Any], start_time: float):
     logger.info("メッセージを受信しました", user_id=hashed_user_id, text=message_text)
 
     try:
+        # サービスが初期化されていない場合は初期化を試行
+        if qa_service is None:
+            initialize_services()
+        
+        # サービスが初期化されていない場合はエラーメッセージを返す
+        if qa_service is None or line_client is None:
+            line_client = LineClient()  # 最低限の初期化
+            line_client.reply_text(reply_token, "申し訳ございません。システムの初期化中です。しばらくお待ちください。")
+            return
         # キャンセルコマンドのチェック
         if message_text.strip().lower() in ["キャンセル", "cancel", "やめる", "終了"]:
             if flow_service.is_in_flow(user_id):
@@ -363,10 +379,22 @@ def get_fallback_response() -> str:
 def health_check():
     """ヘルスチェックエンドポイント"""
     try:
+        # サービスが初期化されていない場合は初期化を試行
+        if qa_service is None:
+            initialize_services()
+        
         # 基本的な健全性チェック
-        qa_healthy = qa_service.health_check()
-        flow_healthy = len(flow_service.flows) > 0
-        ai_healthy = flow_service.ai_service.health_check()
+        if qa_service is not None:
+            qa_healthy = qa_service.health_check()
+        else:
+            qa_healthy = False
+            
+        if flow_service is not None:
+            flow_healthy = len(flow_service.flows) > 0
+            ai_healthy = flow_service.ai_service.health_check()
+        else:
+            flow_healthy = False
+            ai_healthy = False
         
         if qa_healthy and flow_healthy:
             return jsonify({
