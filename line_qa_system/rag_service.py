@@ -95,11 +95,18 @@ class RAGService:
             # pgvector拡張の確認（エラーハンドリング付き）
             try:
                 with self.db_connection.cursor() as cursor:
+                    # まず利用可能な拡張機能を確認
+                    cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
+                    available_extensions = cursor.fetchall()
+                    logger.debug(f"Available extensions: {available_extensions}")
+                    
+                    # pgvector拡張機能の有効化を試行
                     cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
                     self.db_connection.commit()
                     logger.info("pgvector拡張機能を有効化しました")
             except Exception as e:
                 logger.warning("pgvector拡張機能の有効化に失敗しました", error=str(e))
+                logger.info("PostgreSQLでpgvector拡張機能が利用できない可能性があります")
                 logger.info("RAG機能は無効化されます。基本機能のみ利用可能です。")
                 self.is_enabled = False
                 return

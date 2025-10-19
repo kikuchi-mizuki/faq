@@ -41,16 +41,28 @@ class DocumentCollector:
     def _get_credentials(self) -> Optional[Credentials]:
         """Google認証情報を取得"""
         try:
-            service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
-            if not service_account_json:
+            service_account_json_raw = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+            if not service_account_json_raw:
                 logger.error("GOOGLE_SERVICE_ACCOUNT_JSON環境変数が設定されていません")
                 return None
+            
+            logger.debug(f"Raw GOOGLE_SERVICE_ACCOUNT_JSON (first 50 chars): {service_account_json_raw[:50]}...")
+            
+            # Base64デコードを試行
+            try:
+                import base64
+                service_account_json = base64.b64decode(service_account_json_raw).decode('utf-8')
+                logger.debug(f"Base64 decoded successfully, first 50 chars: {service_account_json[:50]}...")
+            except Exception as e:
+                logger.warning(f"Base64デコードに失敗しました。生のJSONとして処理します: {e}")
+                service_account_json = service_account_json_raw
             
             # JSON形式の検証
             try:
                 credentials_info = json.loads(service_account_json)
             except json.JSONDecodeError as e:
                 logger.error("GOOGLE_SERVICE_ACCOUNT_JSONの形式が正しくありません", error=str(e))
+                logger.error(f"不正なJSON文字列の先頭: {service_account_json[:100]}")
                 logger.info("RAG機能の文書収集は無効化されます。基本機能のみ利用可能です。")
                 return None
             
