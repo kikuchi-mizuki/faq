@@ -77,7 +77,7 @@ def initialize_services():
         session_service = SessionService()
         logger.info("SessionServiceの初期化が完了しました")
         
-        flow_service = FlowService(session_service)
+        flow_service = FlowService(session_service, qa_service)
         logger.info("FlowServiceの初期化が完了しました")
         
         location_service = LocationService()

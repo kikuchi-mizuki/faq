@@ -15,6 +15,7 @@ from .models import FlowItem, ConversationState
 from .config import Config
 from .session_service import SessionService
 from .ai_service import AIService
+from .qa_service import QAService
 
 logger = structlog.get_logger(__name__)
 
@@ -22,10 +23,11 @@ logger = structlog.get_logger(__name__)
 class FlowService:
     """分岐会話フローサービス"""
 
-    def __init__(self, session_service: SessionService):
+    def __init__(self, session_service: SessionService, qa_service: QAService = None):
         """初期化"""
         self.sheet_id = Config.SHEET_ID_QA
         self.session_service = session_service
+        self.qa_service = qa_service
         self.flows: List[FlowItem] = []
         self.last_updated = datetime.now()
 
@@ -354,7 +356,7 @@ class FlowService:
         return sorted(list(triggers))
 
     def _generate_ai_response(self, state: ConversationState) -> str:
-        """AI回答を生成"""
+        """AI回答を生成（Q&Aベース）"""
         try:
             # ユーザーの選択履歴を整理
             user_choices = {}
@@ -365,7 +367,23 @@ class FlowService:
                     step_num = key.split("_")[1]
                     user_choices[f"step_{step_num}"] = value
             
-            # AI回答を生成
+            # Q&Aサービスが利用可能な場合、関連するQ&Aを検索
+            if self.qa_service:
+                # ユーザーの選択内容から検索クエリを生成
+                search_query = self._build_search_query_from_choices(user_choices, state.trigger)
+                
+                # Q&Aから関連する回答を検索
+                qa_results = self.qa_service.find_answer(search_query)
+                
+                if qa_results and qa_results.get('answer'):
+                    # Q&Aベースの回答を生成
+                    ai_response = self._generate_qa_based_response(
+                        qa_results, user_choices, state.trigger
+                    )
+                    logger.info("Q&AベースのAI回答を生成しました", user_id=state.user_id, trigger=state.trigger)
+                    return ai_response
+            
+            # フォールバック: 通常のAI回答生成
             ai_response = self.ai_service.generate_flow_response(
                 trigger=state.trigger,
                 step=state.current_step,
@@ -378,5 +396,51 @@ class FlowService:
             
         except Exception as e:
             logger.error("AI回答生成中にエラーが発生しました", error=str(e))
+            return "申し訳ございません。回答を生成できませんでした。"
+
+    def _build_search_query_from_choices(self, user_choices: Dict[str, str], trigger: str) -> str:
+        """ユーザーの選択から検索クエリを構築"""
+        query_parts = [trigger]
+        
+        for step, choice in user_choices.items():
+            query_parts.append(choice)
+        
+        return " ".join(query_parts)
+
+    def _generate_qa_based_response(self, qa_results: Dict[str, Any], user_choices: Dict[str, str], trigger: str) -> str:
+        """Q&Aベースの回答を生成"""
+        try:
+            # 基本の回答テンプレート
+            base_response = f"""
+🎬 {trigger}のご相談ありがとうございます！
+
+【ご選択内容】
+"""
+            
+            # ユーザーの選択を整理
+            for step, choice in user_choices.items():
+                step_num = step.split("_")[1]
+                base_response += f"・ステップ{step_num}: {choice}\n"
+            
+            # Q&Aからの回答を追加
+            if qa_results.get('answer'):
+                base_response += f"""
+【詳細情報】
+{qa_results['answer']}
+"""
+            
+            # 次のステップの案内
+            base_response += """
+【次のステップ】
+担当者から24時間以内にご連絡いたします。
+詳細な見積もりとスケジュールをご提案いたします。
+
+何かご質問がございましたら、お気軽にお声かけください！
+"""
+            
+            return base_response.strip()
+            
+        except Exception as e:
+            logger.error("Q&Aベース回答生成中にエラーが発生しました", error=str(e))
             return "申し訳ございません。回答を生成できませんでした。"
 
