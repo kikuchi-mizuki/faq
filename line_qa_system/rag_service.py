@@ -76,10 +76,7 @@ class RAGService:
             # データベース接続の初期化
             if self.database_url:
                 self._init_database()
-                if not self.is_enabled:
-                    logger.info("データベース初期化に失敗しました。代替RAG機能を試行します")
-                    self._initialize_fallback_rag()
-                    return
+                # データベース初期化の結果は、__init__でチェックする
             
             # Gemini APIの初期化
             if self.gemini_api_key:
@@ -130,7 +127,6 @@ class RAGService:
                     
                     if not available_extensions:
                         logger.warning("pgvector拡張機能が利用できません")
-                        logger.info("代替RAG機能を初期化します")
                         self.is_enabled = False
                         return
                     
@@ -140,7 +136,6 @@ class RAGService:
                     logger.info("pgvector拡張機能を有効化しました")
             except Exception as e:
                 logger.warning("pgvector拡張機能の有効化に失敗しました", error=str(e))
-                logger.info("代替RAG機能を初期化します")
                 self.is_enabled = False
                 return
                 
