@@ -44,23 +44,32 @@ class RAGService:
 
     def __init__(self):
         """初期化"""
-        self.embedding_model = None
-        self.db_connection = None
-        self.is_enabled = False
-        
-        # 設定の読み込み
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        self.database_url = os.getenv('DATABASE_URL')
-        self.embedding_model_name = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
-        self.vector_dimension = int(os.getenv('VECTOR_DIMENSION', '384'))
-        self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.6'))
-        self.gemini_model = None
-        
-        # シンプルな初期化ロジック
-        self._initialize_rag_service()
-        
-        # デバッグ用ログ
-        logger.info(f"RAGService初期化完了: is_enabled={self.is_enabled}")
+        try:
+            logger.info("RAGServiceの初期化を開始します")
+            
+            self.embedding_model = None
+            self.db_connection = None
+            self.is_enabled = False
+            
+            # 設定の読み込み
+            self.gemini_api_key = os.getenv('GEMINI_API_KEY')
+            self.database_url = os.getenv('DATABASE_URL')
+            self.embedding_model_name = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
+            self.vector_dimension = int(os.getenv('VECTOR_DIMENSION', '384'))
+            self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.6'))
+            self.gemini_model = None
+            
+            logger.info("RAGServiceの設定を読み込みました")
+            
+            # シンプルな初期化ロジック
+            self._initialize_rag_service()
+            
+            # デバッグ用ログ
+            logger.info(f"RAGService初期化完了: is_enabled={self.is_enabled}")
+            
+        except Exception as e:
+            logger.error("RAGServiceの初期化中にエラーが発生しました", error=str(e))
+            self.is_enabled = False
 
     def _initialize_rag_service(self):
         """RAGサービスの初期化（シンプル版）"""
