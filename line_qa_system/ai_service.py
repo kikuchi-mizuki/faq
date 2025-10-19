@@ -10,7 +10,16 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import structlog
 
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+    HarmCategory = None
+    HarmBlockThreshold = None
+
 from google.oauth2.service_account import Credentials
 
 from .config import Config
@@ -25,7 +34,12 @@ class AIService:
     def __init__(self):
         """初期化"""
         self.model = None
-        self._init_gemini()
+        self.is_enabled = False
+        
+        if GEMINI_AVAILABLE:
+            self._init_gemini()
+        else:
+            logger.warning("Gemini APIが利用できません。AI機能は無効です。")
         
         # 回答テンプレート
         self.response_templates = {
@@ -181,11 +195,13 @@ class AIService:
             # Gemini APIの設定
             genai.configure(api_key=api_key)
             self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.is_enabled = True
             logger.info("Gemini APIの初期化が完了しました")
             
         except Exception as e:
             logger.error("Gemini APIの初期化に失敗しました", error=str(e))
             self.model = None
+            self.is_enabled = False
 
     def generate_flow_response(
         self, 
