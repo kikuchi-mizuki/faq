@@ -89,7 +89,10 @@ def initialize_services():
         
         # RAGサービスの初期化（段階的有効化）
         try:
+            logger.info("RAGServiceの初期化を開始します")
             rag_service = RAGService()
+            logger.info(f"RAGServiceの初期化完了: is_enabled={rag_service.is_enabled}")
+            
             if rag_service.is_enabled:
                 logger.info("RAGServiceの初期化が完了しました")
                 
@@ -99,7 +102,7 @@ def initialize_services():
             else:
                 logger.warning("RAGServiceの初期化に失敗しました。基本機能のみ利用可能です。")
         except Exception as e:
-            logger.error("RAG機能の初期化に失敗しました", error=str(e))
+            logger.error("RAG機能の初期化に失敗しました", error=str(e), exc_info=True)
             logger.info("RAG機能は無効化されています。基本機能のみ利用可能です。")
         
         logger.info("全てのサービスの初期化が完了しました")
