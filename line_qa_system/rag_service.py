@@ -58,6 +58,11 @@ class RAGService:
         
         # 初期化を試行
         self._initialize_services()
+        
+        # pgvectorが利用できない場合の代替案
+        if not self.is_enabled:
+            logger.info("pgvectorが利用できないため、代替RAG機能を初期化します")
+            self._initialize_fallback_rag()
 
     def _initialize_services(self):
         """サービスの初期化"""
@@ -86,6 +91,21 @@ class RAGService:
             logger.error("RAGServiceの初期化に失敗しました", error=str(e))
             self.is_enabled = False
 
+    def _initialize_fallback_rag(self):
+        """代替RAG機能の初期化（pgvectorなし）"""
+        try:
+            # Gemini APIのみを使用したRAG機能
+            if self.gemini_api_key:
+                genai.configure(api_key=self.gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                logger.info("代替RAG機能（Geminiのみ）を初期化しました")
+                self.is_enabled = True
+            else:
+                logger.warning("Gemini APIキーが設定されていません")
+        except Exception as e:
+            logger.error("代替RAG機能の初期化に失敗しました", error=str(e))
+            self.is_enabled = False
+
     def _init_database(self):
         """データベースの初期化"""
         try:
@@ -98,7 +118,13 @@ class RAGService:
                     # まず利用可能な拡張機能を確認
                     cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
                     available_extensions = cursor.fetchall()
-                    logger.debug(f"Available extensions: {available_extensions}")
+                    logger.info(f"Available extensions: {available_extensions}")
+                    
+                    if not available_extensions:
+                        logger.warning("pgvector拡張機能が利用できません")
+                        logger.info("RAG機能は無効化されます。基本機能のみ利用可能です。")
+                        self.is_enabled = False
+                        return
                     
                     # pgvector拡張機能の有効化を試行
                     cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
