@@ -372,8 +372,8 @@ class FlowService:
                 # ユーザーの選択内容から検索クエリを生成
                 search_query = self._build_search_query_from_choices(user_choices, state.trigger)
                 
-                # Q&Aから関連する回答を検索
-                qa_results = self.qa_service.find_answer(search_query)
+                # qa_listシートから関連する回答を検索
+                qa_results = self.qa_service.find_answer_from_qa_list(search_query)
                 
                 if qa_results and qa_results.get('answer'):
                     # Q&Aベースの回答を生成
