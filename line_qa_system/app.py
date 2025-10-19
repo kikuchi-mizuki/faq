@@ -364,10 +364,27 @@ def health_check():
     """ヘルスチェックエンドポイント"""
     try:
         # 基本的な健全性チェック
-        qa_service.health_check()
-        return jsonify(
-            {"status": "healthy", "timestamp": time.time(), "version": "0.1.0"}
-        )
+        qa_healthy = qa_service.health_check()
+        flow_healthy = len(flow_service.flows) > 0
+        ai_healthy = flow_service.ai_service.health_check()
+        
+        if qa_healthy and flow_healthy:
+            return jsonify({
+                "status": "healthy", 
+                "timestamp": time.time(), 
+                "version": "0.1.0",
+                "qa_service": "ok",
+                "flow_service": "ok",
+                "ai_service": "ok" if ai_healthy else "disabled"
+            })
+        else:
+            return jsonify({
+                "status": "unhealthy",
+                "qa_service": "ok" if qa_healthy else "error",
+                "flow_service": "ok" if flow_healthy else "error",
+                "timestamp": time.time()
+            }), 500
+            
     except Exception as e:
         logger.error("ヘルスチェックに失敗しました", error=str(e))
         return (
@@ -458,8 +475,13 @@ def internal_error(error):
 
 def main():
     """アプリケーションの起動"""
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    try:
+        port = int(os.environ.get("PORT", 5000))
+        logger.info(f"アプリケーションを起動します (ポート: {port})")
+        app.run(host="0.0.0.0", port=port, debug=False)
+    except Exception as e:
+        logger.error("アプリケーションの起動に失敗しました", error=str(e))
+        raise
 
 
 if __name__ == "__main__":
