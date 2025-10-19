@@ -21,6 +21,8 @@ from .qa_service import QAService
 from .session_service import SessionService
 from .flow_service import FlowService
 from .location_service import LocationService
+from .rag_service import RAGService
+from .document_collector import DocumentCollector
 from .config import Config
 from .utils import verify_line_signature, hash_user_id
 
@@ -57,10 +59,12 @@ line_client = None
 session_service = None
 flow_service = None
 location_service = None
+rag_service = None
+document_collector = None
 
 def initialize_services():
     """サービスの初期化（遅延初期化）"""
-    global qa_service, line_client, session_service, flow_service, location_service
+    global qa_service, line_client, session_service, flow_service, location_service, rag_service, document_collector
     
     if qa_service is not None:
         return  # 既に初期化済み
@@ -82,6 +86,14 @@ def initialize_services():
         
         location_service = LocationService()
         logger.info("LocationServiceの初期化が完了しました")
+        
+        # RAGサービスの初期化
+        rag_service = RAGService()
+        logger.info("RAGServiceの初期化が完了しました")
+        
+        # 文書収集サービスの初期化
+        document_collector = DocumentCollector(rag_service)
+        logger.info("DocumentCollectorの初期化が完了しました")
         
         logger.info("全てのサービスの初期化が完了しました")
         
