@@ -178,6 +178,75 @@ class FlowService:
         
         return None
 
+    def find_flow_by_ai_context(self, user_input: str) -> Optional[FlowItem]:
+        """
+        AIを使用して文脈を判断し、適切なフローを検索
+        
+        Args:
+            user_input: ユーザーの入力
+            
+        Returns:
+            該当するフローアイテム（見つからない場合はNone）
+        """
+        try:
+            # AIサービスが利用可能かチェック
+            if not self.ai_service or not self.ai_service.is_enabled:
+                logger.warning("AIサービスが利用できません")
+                return None
+            
+            # 利用可能なトリガーを取得
+            available_triggers = self.get_available_triggers()
+            if not available_triggers:
+                logger.warning("利用可能なトリガーがありません")
+                return None
+            
+            # AIに文脈判断を依頼
+            context_prompt = f"""
+あなたは動画制作会社のカスタマーサポートAIです。
+ユーザーの質問を分析して、最も適切な対応フローを選択してください。
+
+【利用可能なフロー】
+{', '.join(available_triggers)}
+
+【ユーザーの質問】
+{user_input}
+
+【判断基準】
+- 制作依頼: 動画制作、コンテンツ制作、制作依頼に関する質問
+- 料金相談: 費用、価格、料金に関する質問
+- 修正相談: 修正、変更、直しに関する質問
+- プラン相談: プラン、サービス内容に関する質問
+- サポート: 技術的な問題、エラー、困りごと
+- よくある質問: 一般的な質問、FAQ
+
+最も適切なフロー名を1つだけ回答してください。
+フロー名のみを回答し、説明は不要です。
+"""
+            
+            # AI回答を生成
+            response = self.ai_service.model.generate_content(context_prompt)
+            if response and response.text:
+                ai_trigger = response.text.strip()
+                logger.info(f"AI文脈判断結果: '{user_input}' -> '{ai_trigger}'")
+                
+                # 判断されたトリガーでフローを検索
+                if ai_trigger in available_triggers:
+                    flow = self.get_flow_by_trigger(ai_trigger, step=1)
+                    if flow:
+                        logger.info(f"AI文脈判断でフローを開始: '{ai_trigger}'")
+                        return flow
+                    else:
+                        logger.warning(f"AI判断されたトリガー '{ai_trigger}' のフローが見つかりません")
+                else:
+                    logger.warning(f"AI判断されたトリガー '{ai_trigger}' が利用可能なトリガーにありません")
+            else:
+                logger.warning("AI文脈判断の回答が空です")
+                
+        except Exception as e:
+            logger.error("AI文脈判断中にエラーが発生しました", error=str(e))
+        
+        return None
+
     def get_flow_by_id(self, flow_id: int) -> Optional[FlowItem]:
         """
         IDでフローを取得

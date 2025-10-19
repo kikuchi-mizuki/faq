@@ -279,7 +279,24 @@ def process_text_message(event: Dict[str, Any], start_time: float):
 
         else:
             # フロー外の場合は通常のQ&A検索
-            # まず、自然言語でフローのトリガーかどうかをチェック
+            # まず、AI文脈判断でフローのトリガーかどうかをチェック
+            flow = flow_service.find_flow_by_ai_context(message_text)
+            if flow:
+                # AI文脈判断でフローを開始
+                flow_service.start_flow(user_id, flow.trigger)
+                # 最初の質問を送信（クイックリプライ付き）
+                options = flow.option_list
+                line_client.reply_text(
+                    reply_token,
+                    flow.question,
+                    quick_reply=options if options else None,
+                )
+                logger.info(
+                    "AI文脈判断でフローを開始しました", user_id=hashed_user_id, trigger=flow.trigger
+                )
+                return
+            
+            # 自然言語マッチングも試行
             flow = flow_service.find_flow_by_natural_language(message_text)
             if flow:
                 # 自然言語マッチングでフローを開始
