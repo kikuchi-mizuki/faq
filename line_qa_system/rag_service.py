@@ -78,6 +78,7 @@ class RAGService:
             
             # データベース接続の初期化を試行
             database_success = self._try_database_connection()
+            logger.info(f"データベース接続の結果: {database_success}")
             
             if database_success:
                 # データベース接続が成功した場合、完全RAG機能を初期化
@@ -126,6 +127,7 @@ class RAGService:
                 
                 if not available_extensions:
                     logger.warning("pgvector拡張機能が利用できません")
+                    logger.info("データベース接続は成功したが、pgvectorが利用できないためFalseを返します")
                     return False
                 
                 # pgvector拡張機能の有効化を試行
@@ -136,6 +138,7 @@ class RAGService:
             # テーブルの作成
             self.create_tables()
             logger.info("データベース接続が確立されました")
+            logger.info("データベース接続とpgvectorの両方が成功したためTrueを返します")
             return True
             
         except Exception as e:
