@@ -504,11 +504,18 @@ def internal_error(error):
 def main():
     """アプリケーションの起動"""
     try:
+        # サービスを初期化
+        logger.info("サービスを初期化しています...")
+        initialize_services()
+        logger.info("サービス初期化完了")
+        
         port = int(os.environ.get("PORT", 5000))
         logger.info(f"アプリケーションを起動します (ポート: {port})")
         app.run(host="0.0.0.0", port=port, debug=False)
     except Exception as e:
         logger.error("アプリケーションの起動に失敗しました", error=str(e))
+        import traceback
+        traceback.print_exc()
         raise
 
 
