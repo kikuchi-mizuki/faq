@@ -76,19 +76,20 @@ class RAGService:
             # データベース接続の初期化
             if self.database_url:
                 self._init_database()
-                # データベース初期化の結果は、__init__でチェックする
+                # データベース初期化が失敗した場合、処理を中断
+                if not self.is_enabled:
+                    logger.info("データベース初期化に失敗したため、RAG機能は無効化されます")
+                    return
             
-            # Gemini APIの初期化
+            # Gemini APIの初期化（データベース初期化が成功した場合のみ）
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
                 self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
                 logger.info("Gemini APIを初期化しました")
             
-            # データベース初期化の結果を確認
-            if self.is_enabled:
-                logger.info("RAGServiceの初期化が完了しました")
-            else:
-                logger.info("データベース初期化に失敗したため、RAG機能は無効化されます")
+            # 全ての初期化が成功した場合
+            self.is_enabled = True
+            logger.info("RAGServiceの初期化が完了しました")
             
         except Exception as e:
             logger.error("RAGServiceの初期化に失敗しました", error=str(e))
