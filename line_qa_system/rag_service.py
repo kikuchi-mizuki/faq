@@ -133,9 +133,9 @@ class RAGService:
                 
                 if not available_extensions:
                     logger.warning("pgvector拡張機能が利用できません")
-                    logger.info("Railway PostgreSQLではpgvectorが利用できない可能性があります")
-                    logger.info("データベース接続は成功したが、pgvectorが利用できないためFalseを返します")
-                    logger.info("=== RAGService初期化デバッグ: pgvector利用不可 ===")
+                    logger.warning("Railway PostgreSQLではpgvectorが利用できない可能性があります")
+                    logger.warning("データベース接続は成功したが、pgvectorが利用できないためFalseを返します")
+                    logger.warning("=== RAGService初期化デバッグ: pgvector利用不可 ===")
                     return False
                 
                 # pgvector拡張機能の有効化を試行
