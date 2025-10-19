@@ -87,9 +87,8 @@ class RAGService:
                 self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
                 logger.info("Gemini APIを初期化しました")
             
-            # 全ての初期化が成功した場合のみ有効化
+            # データベース初期化の結果を確認
             if self.is_enabled:
-                self.is_enabled = True
                 logger.info("RAGServiceの初期化が完了しました")
             else:
                 logger.info("RAG機能は無効化されます")
