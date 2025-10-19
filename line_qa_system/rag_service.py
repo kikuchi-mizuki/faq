@@ -13,8 +13,22 @@ import structlog
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import numpy as np
-from sentence_transformers import SentenceTransformer
+
+# 条件付きインポート（軽量化版）
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+    SentenceTransformer = None
+
 import google.generativeai as genai
 from google.oauth2.service_account import Credentials
 import gspread
@@ -284,8 +298,11 @@ class RAGService:
         
         return chunks
 
-    def _generate_embedding(self, text: str) -> np.ndarray:
+    def _generate_embedding(self, text: str):
         """テキストの埋め込みベクトルを生成"""
+        if not NUMPY_AVAILABLE:
+            raise ValueError("numpyが利用できません。軽量化版では無効化されています")
+        
         if not self.embedding_model:
             raise ValueError("Embeddingモデルが初期化されていません")
         
