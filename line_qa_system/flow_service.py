@@ -371,17 +371,21 @@ class FlowService:
             if self.qa_service:
                 # ユーザーの選択内容から検索クエリを生成
                 search_query = self._build_search_query_from_choices(user_choices, state.trigger)
+                logger.info("qa_list検索クエリを生成しました", query=search_query, user_id=state.user_id)
                 
                 # qa_listシートから関連する回答を検索
                 qa_results = self.qa_service.find_answer_from_qa_list(search_query)
+                logger.info("qa_list検索結果", found=qa_results is not None, user_id=state.user_id)
                 
-                if qa_results and qa_results.get('answer'):
+                if qa_results and hasattr(qa_results, 'answer') and qa_results.answer:
                     # Q&Aベースの回答を生成
                     ai_response = self._generate_qa_based_response(
                         qa_results, user_choices, state.trigger
                     )
                     logger.info("Q&AベースのAI回答を生成しました", user_id=state.user_id, trigger=state.trigger)
                     return ai_response
+                else:
+                    logger.info("qa_listから該当する回答が見つかりませんでした", user_id=state.user_id)
             
             # フォールバック: 通常のAI回答生成
             ai_response = self.ai_service.generate_flow_response(
@@ -423,10 +427,10 @@ class FlowService:
                 base_response += f"・ステップ{step_num}: {choice}\n"
             
             # Q&Aからの回答を追加
-            if qa_results.get('answer'):
+            if hasattr(qa_results, 'answer') and qa_results.answer:
                 base_response += f"""
 【詳細情報】
-{qa_results['answer']}
+{qa_results.answer}
 """
             
             # 次のステップの案内
