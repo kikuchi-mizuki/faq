@@ -407,7 +407,10 @@ def health_check():
     try:
         # サービスが初期化されていない場合は初期化を試行
         if qa_service is None:
+            logger.info("ヘルスチェック時にサービスを初期化します")
             initialize_services()
+        else:
+            logger.info("サービスは既に初期化済みです")
         
         # 基本的な健全性チェック
         if qa_service is not None:
