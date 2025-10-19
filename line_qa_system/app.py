@@ -87,13 +87,14 @@ def initialize_services():
         location_service = LocationService()
         logger.info("LocationServiceの初期化が完了しました")
         
-        # RAGサービスの初期化
-        rag_service = RAGService()
-        logger.info("RAGServiceの初期化が完了しました")
+        # RAGサービスの初期化（一時的に無効化）
+        # rag_service = RAGService()
+        # logger.info("RAGServiceの初期化が完了しました")
         
-        # 文書収集サービスの初期化
-        document_collector = DocumentCollector(rag_service)
-        logger.info("DocumentCollectorの初期化が完了しました")
+        # 文書収集サービスの初期化（一時的に無効化）
+        # document_collector = DocumentCollector(rag_service)
+        # logger.info("DocumentCollectorの初期化が完了しました")
+        logger.info("RAG機能は一時的に無効化されています")
         
         logger.info("全てのサービスの初期化が完了しました")
         
