@@ -121,12 +121,19 @@ class RAGService:
             
             # pgvector拡張の確認
             with self.db_connection.cursor() as cursor:
+                # 利用可能な拡張機能を全て確認
+                cursor.execute("SELECT name FROM pg_available_extensions ORDER BY name;")
+                all_extensions = cursor.fetchall()
+                logger.info(f"利用可能な拡張機能: {[ext[0] for ext in all_extensions]}")
+                
+                # pgvector拡張機能の確認
                 cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
                 available_extensions = cursor.fetchall()
-                logger.info(f"Available extensions: {available_extensions}")
+                logger.info(f"pgvector拡張機能: {available_extensions}")
                 
                 if not available_extensions:
                     logger.warning("pgvector拡張機能が利用できません")
+                    logger.info("Railway PostgreSQLではpgvectorが利用できない可能性があります")
                     logger.info("データベース接続は成功したが、pgvectorが利用できないためFalseを返します")
                     return False
                 
