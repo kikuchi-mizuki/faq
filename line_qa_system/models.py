@@ -210,7 +210,9 @@ class FlowItem:
         """選択肢のリスト"""
         if not self.options:
             return []
-        return [opt.strip() for opt in self.options.split("／") if opt.strip()]
+        # 全角スラッシュと半角スラッシュの両方に対応
+        options_text = self.options.replace("／", "/")
+        return [opt.strip() for opt in options_text.split("/") if opt.strip()]
 
     @property
     def next_step_list(self) -> List[int]:
@@ -218,7 +220,9 @@ class FlowItem:
         if not self.next_step:
             return []
         try:
-            return [int(step.strip()) for step in self.next_step.split("／") if step.strip()]
+            # 全角スラッシュと半角スラッシュの両方に対応
+            next_step_text = self.next_step.replace("／", "/")
+            return [int(step.strip()) for step in next_step_text.split("/") if step.strip()]
         except ValueError:
             return []
 
