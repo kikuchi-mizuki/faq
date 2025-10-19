@@ -270,7 +270,13 @@ class FlowService:
                 logger.info("フロー終了", user_id=user_id, trigger=state.trigger)
                 
                 # AI回答を生成
-                ai_response = self._generate_ai_response(state)
+                try:
+                    logger.info("AI回答生成を開始します", user_id=user_id, trigger=state.trigger)
+                    ai_response = self._generate_ai_response(state)
+                    logger.info("AI回答生成完了", user_id=user_id, response_length=len(ai_response) if ai_response else 0)
+                except Exception as e:
+                    logger.error("AI回答生成中にエラーが発生しました", error=str(e), user_id=user_id)
+                    ai_response = "申し訳ございません。回答を生成できませんでした。"
                 
                 # セッションをクリア
                 self.session_service.delete_session(user_id)
@@ -359,6 +365,8 @@ class FlowService:
     def _generate_ai_response(self, state: ConversationState) -> str:
         """AI回答を生成（Q&Aベース）"""
         try:
+            logger.info("AI回答生成を開始します", user_id=state.user_id, trigger=state.trigger)
+            
             # ユーザーの選択履歴を整理
             user_choices = {}
             
