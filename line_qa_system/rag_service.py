@@ -15,7 +15,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
 from sentence_transformers import SentenceTransformer
-import openai
+import google.generativeai as genai
 from google.oauth2.service_account import Credentials
 import gspread
 
@@ -35,11 +35,12 @@ class RAGService:
         self.is_enabled = False
         
         # 設定の読み込み
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
+        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
         self.database_url = os.getenv('DATABASE_URL')
         self.embedding_model_name = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
         self.vector_dimension = int(os.getenv('VECTOR_DIMENSION', '384'))
         self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.6'))
+        self.gemini_model = None
         
         # 初期化を試行
         self._initialize_services()
@@ -57,10 +58,11 @@ class RAGService:
                 self._init_database()
                 logger.info("データベース接続を初期化しました")
             
-            # OpenAI APIの初期化
-            if self.openai_api_key:
-                openai.api_key = self.openai_api_key
-                logger.info("OpenAI APIを初期化しました")
+            # Gemini APIの初期化
+            if self.gemini_api_key:
+                genai.configure(api_key=self.gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                logger.info("Gemini APIを初期化しました")
             
             self.is_enabled = True
             logger.info("RAGServiceの初期化が完了しました")
@@ -222,8 +224,8 @@ class RAGService:
 
     def generate_answer(self, query: str, context_documents: List[Dict[str, Any]]) -> str:
         """コンテキストに基づいて回答を生成"""
-        if not self.openai_api_key:
-            logger.warning("OpenAI APIキーが設定されていません")
+        if not self.gemini_api_key or not self.gemini_model:
+            logger.warning("Gemini APIキーまたはモデルが設定されていません")
             return "申し訳ございません。AI回答生成機能が利用できません。"
         
         try:
@@ -233,23 +235,21 @@ class RAGService:
             # プロンプトを構築
             prompt = self._build_prompt(query, context)
             
-            # OpenAI APIを呼び出し
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "あなたは親切で正確なアシスタントです。提供されたコンテキストに基づいて、質問に答えてください。"},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1000,
-                temperature=0.7
+            # Gemini APIを呼び出し
+            response = self.gemini_model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=1000,
+                    temperature=0.7,
+                )
             )
             
-            answer = response.choices[0].message.content
-            logger.info("AI回答を生成しました")
+            answer = response.text
+            logger.info("Gemini AI回答を生成しました")
             return answer
             
         except Exception as e:
-            logger.error("AI回答生成中にエラーが発生しました", error=str(e))
+            logger.error("Gemini AI回答生成中にエラーが発生しました", error=str(e))
             return "申し訳ございません。回答を生成できませんでした。"
 
     def _split_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
