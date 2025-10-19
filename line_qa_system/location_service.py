@@ -115,66 +115,10 @@ class LocationService:
             self.locations = []
 
     def reload_form_logs(self):
-        """qa_form_logシートの再読み込み"""
-        try:
-            start_time = time.time()
-
-            # スプレッドシートからデータを取得
-            sheet = self.gc.open_by_key(self.sheet_id).worksheet("qa_form_log")
-            all_values = sheet.get_all_records()
-
-            # データの変換
-            self.form_logs = []
-            for i, row in enumerate(all_values, start=1):
-                try:
-                    # タイムスタンプの解析
-                    timestamp_str = row.get("timestamp", "")
-                    if timestamp_str:
-                        try:
-                            timestamp = datetime.fromisoformat(
-                                timestamp_str.replace("Z", "+00:00")
-                            )
-                        except:
-                            timestamp = datetime.now()
-                    else:
-                        timestamp = datetime.now()
-
-                    # approved列の処理
-                    approved_value = row.get("approved", "FALSE")
-                    if isinstance(approved_value, str):
-                        approved_bool = approved_value.upper() in ["TRUE", "YES", "承認済み"]
-                    else:
-                        approved_bool = bool(approved_value)
-
-                    form_log = QAFormLog(
-                        id=i,
-                        timestamp=timestamp,
-                        question=str(row.get("question", "")),
-                        answer=str(row.get("answer", "")),
-                        category=str(row.get("category", "")),
-                        keywords=str(row.get("keywords", "")),
-                        approved=approved_bool,
-                        created_by=str(row.get("created_by", "")),
-                        notes=str(row.get("notes", "")),
-                    )
-
-                    self.form_logs.append(form_log)
-
-                except Exception as e:
-                    logger.warning("form_log行の解析に失敗しました", row=row, error=str(e))
-                    continue
-
-            load_time = time.time() - start_time
-            logger.info(
-                "qa_form_logシートの再読み込みが完了しました",
-                log_count=len(self.form_logs),
-                load_time_ms=int(load_time * 1000),
-            )
-
-        except Exception as e:
-            logger.error("qa_form_logシートの再読み込みに失敗しました", error=str(e))
-            # シートが存在しない場合はエラーにせず空のリストとする
-            self.form_logs = []
+        """qa_form_logシートの再読み込み（Googleフォーム連携は無効化）"""
+        # Googleフォーム連携は不要のため、空のリストを設定
+        self.form_logs = []
+        logger.info("Googleフォーム連携は無効化されています。スプレッドシート直接更新方式を使用してください。")
 
     def search_locations(self, query: str) -> List[LocationItem]:
         """
@@ -276,19 +220,21 @@ class LocationService:
 
     def get_pending_form_logs(self) -> List[QAFormLog]:
         """
-        承認待ちのフォーム投稿を取得
+        承認待ちのフォーム投稿を取得（Googleフォーム連携は無効化）
 
         Returns:
-            承認待ちの投稿リスト
+            空のリスト（Googleフォーム連携は無効化）
         """
-        return [log for log in self.form_logs if not log.is_approved]
+        logger.info("Googleフォーム連携は無効化されています。スプレッドシート直接更新方式を使用してください。")
+        return []
 
     def get_approved_form_logs(self) -> List[QAFormLog]:
         """
-        承認済みのフォーム投稿を取得
+        承認済みのフォーム投稿を取得（Googleフォーム連携は無効化）
 
         Returns:
-            承認済みの投稿リスト
+            空のリスト（Googleフォーム連携は無効化）
         """
-        return [log for log in self.form_logs if log.is_approved]
+        logger.info("Googleフォーム連携は無効化されています。スプレッドシート直接更新方式を使用してください。")
+        return []
 
