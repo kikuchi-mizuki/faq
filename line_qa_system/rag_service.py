@@ -305,16 +305,13 @@ class RAGService:
             logger.error("類似文書検索中にエラーが発生しました", error=str(e))
             return []
 
-    def generate_answer(self, query: str, context_documents: List[Dict[str, Any]]) -> str:
+    def generate_answer(self, query: str, context: str = "") -> str:
         """コンテキストに基づいて回答を生成"""
         if not self.gemini_api_key or not self.gemini_model:
             logger.warning("Gemini APIキーまたはモデルが設定されていません")
             return "申し訳ございません。AI回答生成機能が利用できません。"
         
         try:
-            # コンテキストを構築
-            context = self._build_context(context_documents)
-            
             # プロンプトを構築
             prompt = self._build_prompt(query, context)
             
@@ -394,12 +391,26 @@ class RAGService:
 
     def _build_prompt(self, query: str, context: str) -> str:
         """プロンプトを構築"""
-        return f"""
+        if context:
+            return f"""
 質問: {query}
 
-以下の文書を参考にして、質問に答えてください：
+以下の情報を参考にして、質問に答えてください：
 
 {context}
+
+回答は以下の形式でお願いします：
+1. 結論
+2. 手順（必要に応じて）
+3. 参考情報
+
+日本語で、分かりやすく回答してください。
+"""
+        else:
+            return f"""
+質問: {query}
+
+質問に答えてください。動画制作会社のカスタマーサポートとして、親しみやすく丁寧に回答してください。
 
 回答は以下の形式でお願いします：
 1. 結論
@@ -411,4 +422,4 @@ class RAGService:
 
     def health_check(self) -> bool:
         """RAGサービスの健全性チェック"""
-        return self.is_enabled and self.db_connection is not None
+        return self.is_enabled and self.gemini_model is not None
