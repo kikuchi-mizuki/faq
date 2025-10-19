@@ -81,6 +81,9 @@ class RAGService:
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
                 self.db_connection.commit()
                 
+            # テーブルの作成
+            self.create_tables()
+                
             logger.info("データベース接続が確立されました")
             
         except Exception as e:
