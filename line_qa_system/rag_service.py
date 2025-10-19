@@ -76,7 +76,9 @@ class RAGService:
             # データベース接続の初期化
             if self.database_url:
                 self._init_database()
-                logger.info("データベース接続を初期化しました")
+                if not self.is_enabled:
+                    logger.info("データベース初期化に失敗しました。代替RAG機能を試行します")
+                    return
             
             # Gemini APIの初期化
             if self.gemini_api_key:
@@ -94,6 +96,8 @@ class RAGService:
     def _initialize_fallback_rag(self):
         """代替RAG機能の初期化（pgvectorなし）"""
         try:
+            logger.info("代替RAG機能の初期化を開始します")
+            
             # Gemini APIのみを使用したRAG機能
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
@@ -102,8 +106,11 @@ class RAGService:
                 self.is_enabled = True
             else:
                 logger.warning("Gemini APIキーが設定されていません")
+                logger.info("代替RAG機能は無効化されます。基本機能のみ利用可能です。")
+                self.is_enabled = False
         except Exception as e:
             logger.error("代替RAG機能の初期化に失敗しました", error=str(e))
+            logger.info("代替RAG機能は無効化されます。基本機能のみ利用可能です。")
             self.is_enabled = False
 
     def _init_database(self):
