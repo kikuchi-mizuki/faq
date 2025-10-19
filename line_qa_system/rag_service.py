@@ -48,11 +48,11 @@ class RAGService:
     def _initialize_services(self):
         """サービスの初期化"""
         try:
-        # Embeddingモデルの初期化（一時的に無効化）
-        # if self.embedding_model_name:
-        #     self.embedding_model = SentenceTransformer(self.embedding_model_name)
-        #     logger.info(f"Embeddingモデルを初期化しました: {self.embedding_model_name}")
-        logger.info("Embeddingモデルは一時的に無効化されています")
+            # Embeddingモデルの初期化（一時的に無効化）
+            # if self.embedding_model_name:
+            #     self.embedding_model = SentenceTransformer(self.embedding_model_name)
+            #     logger.info(f"Embeddingモデルを初期化しました: {self.embedding_model_name}")
+            logger.info("Embeddingモデルは一時的に無効化されています")
             
             # データベース接続の初期化
             if self.database_url:
