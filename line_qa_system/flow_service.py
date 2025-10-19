@@ -386,7 +386,10 @@ class FlowService:
                 qa_results = self.qa_service.find_answer_from_qa_list(search_query)
                 logger.info("qa_list検索結果", found=qa_results is not None, user_id=state.user_id)
                 
-                if qa_results and hasattr(qa_results, 'answer') and qa_results.answer:
+                if qa_results and (
+                    (hasattr(qa_results, 'answer') and qa_results.answer) or 
+                    (isinstance(qa_results, dict) and qa_results.get('answer'))
+                ):
                     # Q&Aベースの回答を生成
                     ai_response = self._generate_qa_based_response(
                         qa_results, user_choices, state.trigger
@@ -399,6 +402,8 @@ class FlowService:
             # フォールバック: RAG機能を使用したAI回答生成
             if hasattr(self, 'rag_service') and self.rag_service and self.rag_service.is_enabled:
                 try:
+                    # 検索クエリを再構築
+                    search_query = self._build_search_query_from_choices(user_choices, state.trigger)
                     # RAG機能を使用した回答生成
                     rag_response = self.rag_service.generate_answer(
                         query=search_query,
@@ -434,7 +439,7 @@ class FlowService:
         
         return " ".join(query_parts)
 
-    def _generate_qa_based_response(self, qa_results: Dict[str, Any], user_choices: Dict[str, str], trigger: str) -> str:
+    def _generate_qa_based_response(self, qa_results, user_choices: Dict[str, str], trigger: str) -> str:
         """Q&Aベースの回答を生成"""
         try:
             # 基本の回答テンプレート
@@ -454,6 +459,13 @@ class FlowService:
                 base_response += f"""
 【詳細情報】
 {qa_results.answer}
+"""
+            else:
+                # qa_resultsが辞書の場合の処理
+                if isinstance(qa_results, dict) and qa_results.get('answer'):
+                    base_response += f"""
+【詳細情報】
+{qa_results.get('answer')}
 """
             
             # 次のステップの案内
