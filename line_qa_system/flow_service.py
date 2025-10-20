@@ -206,7 +206,10 @@ class FlowService:
                 logger.warning("利用可能なトリガーがありません")
                 return None
             
-            # AIに文脈判断を依頼
+            # 既存のフロー内容を取得
+            flow_contents = self._get_flow_contents_for_ai()
+            
+            # AIに文脈判断を依頼（既存のフロー内容を参考に）
             context_prompt = f"""
 あなたは動画制作会社のカスタマーサポートAIです。
 ユーザーの質問を分析して、最も適切な対応フローを選択してください。
@@ -214,16 +217,25 @@ class FlowService:
 【利用可能なフロー】
 {', '.join(available_triggers)}
 
+【既存のフロー内容（参考）】
+{flow_contents}
+
 【ユーザーの質問】
 {user_input}
 
-【判断基準】
-- 制作依頼: 動画制作、コンテンツ制作、制作依頼に関する質問
-- 料金相談: 費用、価格、料金に関する質問
-- 修正相談: 修正、変更、直しに関する質問
-- プラン相談: プラン、サービス内容に関する質問
-- サポート: 技術的な問題、エラー、困りごと
-- よくある質問: 一般的な質問、FAQ
+【判断基準（柔軟な対応）】
+- 修正って何回までできますか？: 「修正」「変更」「直し」「やり直し」「修正回数」「修正料金」「何回まで」「回数制限」など
+- 制作依頼: 「制作したい」「動画を作りたい」「コンテンツ制作」「YouTube動画」「Instagram動画」「TikTok動画」など
+- 料金相談: 「料金」「費用」「価格」「いくら」「コスト」「お金」など
+- プラン相談: 「プラン」「サービス」「Twenty BUZZ」「モーグラ動画」など
+- サポート: 「困った」「エラー」「問題」「サポート」「ヘルプ」など
+
+【重要なポイント】
+- ユーザーの意図を理解して、最も適切なフローを選択
+- 似たような意味の表現でも正しく判断
+- 例：「修正について聞きたい」→「修正って何回までできますか？」
+- 例：「修正回数を知りたい」→「修正って何回までできますか？」
+- 例：「修正料金が知りたい」→「修正って何回までできますか？」
 
 最も適切なフロー名を1つだけ回答してください。
 フロー名のみを回答し、説明は不要です。
@@ -252,6 +264,19 @@ class FlowService:
             logger.error("AI文脈判断中にエラーが発生しました", error=str(e))
         
         return None
+
+    def _get_flow_contents_for_ai(self) -> str:
+        """AI判断用のフロー内容を取得"""
+        try:
+            flow_contents = []
+            for flow in self.flows:
+                if flow.step == 1:  # 各フローの最初のステップのみ
+                    flow_contents.append(f"- {flow.trigger}: {flow.question}")
+            
+            return "\n".join(flow_contents) if flow_contents else "フロー内容がありません"
+        except Exception as e:
+            logger.error("フロー内容の取得に失敗しました", error=str(e))
+            return "フロー内容の取得に失敗しました"
 
     def get_flow_by_id(self, flow_id: int) -> Optional[FlowItem]:
         """
