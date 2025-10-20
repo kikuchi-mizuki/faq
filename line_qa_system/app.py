@@ -86,6 +86,12 @@ def initialize_services():
         ai_service = AIService()
         logger.info(f"AIServiceの初期化完了: is_enabled={ai_service.is_enabled}")
         
+        # AIサービスが無効な場合の詳細ログ
+        if not ai_service.is_enabled:
+            logger.warning("AIサービスが無効です。GEMINI_API_KEYの設定を確認してください。")
+        else:
+            logger.info("AIサービスが有効です。")
+        
         # RAGサービスの初期化（段階的有効化）
         rag_service = None
         try:

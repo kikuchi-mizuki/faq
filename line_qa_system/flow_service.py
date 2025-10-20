@@ -193,8 +193,11 @@ class FlowService:
         """
         try:
             # AIサービスが利用可能かチェック
-            if not self.ai_service or not self.ai_service.is_enabled:
-                logger.warning("AIサービスが利用できません")
+            if not self.ai_service:
+                logger.warning("AIサービスが初期化されていません")
+                return None
+            elif not self.ai_service.is_enabled:
+                logger.warning("AIサービスが無効です。GEMINI_API_KEYの設定を確認してください。")
                 return None
             
             # 利用可能なトリガーを取得
