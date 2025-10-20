@@ -356,8 +356,41 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                     score=getattr(result.top_result, "score", None),
                 )
             else:
-                # 候補がある場合は候補を提示
+                # 候補がある場合はAIで最適候補を自動選択（文脈判断）
                 if result.candidates:
+                    try:
+                        ai = flow_service.ai_service if flow_service else None
+                        if ai and ai.is_enabled and ai.model:
+                            # 候補を番号付きで並べてAIに1つ選ばせる
+                            choices_text = "\n".join(
+                                [f"{i+1}. {c.question}" for i, c in enumerate(result.candidates)]
+                            )
+                            prompt = (
+                                "ユーザーの質問に最も適切な候補を1つだけ番号で答えてください。"\
+                                "\n候補一覧:\n" + choices_text + "\n\nユーザーの質問: " + message_text +
+                                "\n出力は番号のみ（例: 2）。説明は不要です。"
+                            )
+                            ai_resp = ai.model.generate_content(prompt)
+                            if ai_resp and ai_resp.text:
+                                sel = ai_resp.text.strip()
+                                # 数字を抽出
+                                import re
+                                m = re.search(r"(\d+)", sel)
+                                if m:
+                                    idx = int(m.group(1)) - 1
+                                    if 0 <= idx < len(result.candidates):
+                                        chosen = result.candidates[idx]
+                                        line_client.reply_text(reply_token, chosen.answer)
+                                        logger.info(
+                                            "AIで候補から最適回答を選択して送信しました",
+                                            user_id=hashed_user_id,
+                                            selected_index=idx+1,
+                                        )
+                                        return
+                        # 失敗時は従来どおり候補提示
+                    except Exception as e:
+                        logger.warning("候補のAI自動選択に失敗しました", error=str(e))
+
                     response_text = format_candidates(result.candidates)
                     line_client.reply_text(reply_token, response_text)
 
