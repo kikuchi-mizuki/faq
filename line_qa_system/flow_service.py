@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
 class FlowService:
     """分岐会話フローサービス"""
 
-    def __init__(self, session_service: SessionService, qa_service: QAService = None, rag_service=None):
+    def __init__(self, session_service: SessionService, qa_service: QAService = None, rag_service=None, ai_service=None):
         """初期化"""
         self.sheet_id = Config.SHEET_ID_QA
         self.session_service = session_service
@@ -32,8 +32,11 @@ class FlowService:
         self.flows: List[FlowItem] = []
         self.last_updated = datetime.now()
 
-        # AIサービスの初期化
-        self.ai_service = AIService()
+        # AIサービスの初期化（外部から渡された場合はそれを使用）
+        if ai_service is None:
+            self.ai_service = AIService()
+        else:
+            self.ai_service = ai_service
 
         # Google Sheets APIの初期化
         self._init_google_sheets()

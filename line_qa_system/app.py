@@ -81,6 +81,11 @@ def initialize_services():
         session_service = SessionService()
         logger.info("SessionServiceの初期化が完了しました")
         
+        # AIServiceの初期化
+        from .ai_service import AIService
+        ai_service = AIService()
+        logger.info(f"AIServiceの初期化完了: is_enabled={ai_service.is_enabled}")
+        
         # RAGサービスの初期化（段階的有効化）
         rag_service = None
         try:
@@ -91,7 +96,7 @@ def initialize_services():
             logger.error("RAG機能の初期化に失敗しました", error=str(e))
             logger.info("RAG機能は無効化されています。基本機能のみ利用可能です。")
         
-        flow_service = FlowService(session_service, qa_service, rag_service)
+        flow_service = FlowService(session_service, qa_service, rag_service, ai_service)
         logger.info("FlowServiceの初期化が完了しました")
         
         location_service = LocationService()
