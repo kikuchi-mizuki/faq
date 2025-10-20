@@ -151,13 +151,15 @@ class QAService:
 
             # 検索実行
             search_results = self._search_qa_items(query)
+            ai_boost_used = False
             
             # 結果が見つからない場合、AI文脈判断を試行
-            if not search_results and self.ai_service and self.ai_service.is_enabled:
+            if (not search_results or len(search_results) == 0) and self.ai_service and self.ai_service.is_enabled:
                 ai_results = self._search_with_ai_context(query)
                 if ai_results:
                     search_results = ai_results
-                    logger.info("AI文脈判断で回答を見つけました", query=query)
+                    ai_boost_used = True
+                    logger.info("AI文脈判断で回答候補を取得しました", query=query)
 
             # 結果の構築
             is_found = False
@@ -170,6 +172,10 @@ class QAService:
 
                 # 閾値チェック
                 if search_results[0].score >= Config.MATCH_THRESHOLD:
+                    is_found = True
+                    top_result = search_results[0]
+                elif ai_boost_used:
+                    # AIが選んだ候補がある場合はしきい値未満でも採用（柔軟に回答）
                     is_found = True
                     top_result = search_results[0]
 
