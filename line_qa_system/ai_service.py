@@ -195,21 +195,22 @@ class AIService:
             # Gemini APIの設定
             genai.configure(api_key=api_key)
             
-            # 直接モデルを試す（シンプルなアプローチ）
+            # 利用可能なモデルを試す
             try:
-                self.model = genai.GenerativeModel('gemini-1.5-flash-001')
-                logger.info("gemini-1.5-flash-001で初期化を試行します")
+                # まず gemini-2.0-flash-001 を試す
+                self.model = genai.GenerativeModel('gemini-2.0-flash-001')
+                logger.info("gemini-2.0-flash-001で初期化を試行します")
                 
                 # テスト呼び出し
                 test_response = self.model.generate_content("テスト")
                 logger.info("Gemini APIのテスト呼び出しが成功しました")
                 
             except Exception as model_error:
-                logger.error("gemini-1.5-flash-001でエラー", error=str(model_error))
+                logger.error("gemini-2.0-flash-001でエラー", error=str(model_error))
                 # フォールバック: 他のモデルを試す
                 try:
-                    self.model = genai.GenerativeModel('gemini-1.5-flash')
-                    logger.info("フォールバック: gemini-1.5-flashを試します")
+                    self.model = genai.GenerativeModel('gemini-flash-latest')
+                    logger.info("フォールバック: gemini-flash-latestを試します")
                 except Exception as fallback_error:
                     logger.error("フォールバックも失敗", error=str(fallback_error))
                     return
