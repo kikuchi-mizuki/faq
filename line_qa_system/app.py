@@ -70,16 +70,7 @@ def initialize_services():
     try:
         logger.info("サービスの初期化を開始します")
         
-        qa_service = QAService(ai_service)
-        logger.info("QAServiceの初期化が完了しました")
-        
-        line_client = LineClient()
-        logger.info("LineClientの初期化が完了しました")
-        
-        session_service = SessionService()
-        logger.info("SessionServiceの初期化が完了しました")
-        
-        # AIServiceの初期化
+        # AIServiceの初期化（最優先で行い、他サービスへ注入）
         from .ai_service import AIService
         ai_service = AIService()
         logger.info(f"AIServiceの初期化完了: is_enabled={ai_service.is_enabled}")
@@ -89,6 +80,16 @@ def initialize_services():
             logger.warning("AIサービスが無効です。GEMINI_API_KEYの設定を確認してください。")
         else:
             logger.info("AIサービスが有効です。")
+        
+        # QAService（AIServiceを渡す）
+        qa_service = QAService(ai_service)
+        logger.info("QAServiceの初期化が完了しました")
+        
+        line_client = LineClient()
+        logger.info("LineClientの初期化が完了しました")
+        
+        session_service = SessionService()
+        logger.info("SessionServiceの初期化が完了しました")
         
         # RAGサービスの初期化（段階的有効化）
         rag_service = None
@@ -102,7 +103,6 @@ def initialize_services():
         
         flow_service = FlowService(session_service, qa_service, rag_service, ai_service)
         logger.info("FlowServiceの初期化が完了しました")
-        
         
         # DocumentCollectorの初期化（RAG機能が有効な場合）
         document_collector = None
@@ -438,33 +438,26 @@ def health_check():
         else:
             logger.info("サービスは既に初期化済みです")
         
-        # 基本的な健全性チェック
-        if qa_service is not None:
-            qa_healthy = qa_service.health_check()
-        else:
-            qa_healthy = False
-            
-        if flow_service is not None:
-            flow_healthy = len(flow_service.flows) > 0
-            ai_healthy = flow_service.ai_service.health_check()
-        else:
-            flow_healthy = False
-            ai_healthy = False
+        # 基本的な健全性チェック（QAが生きていればOK、他は情報として返す）
+        qa_healthy = qa_service.health_check() if qa_service is not None else False
+        flow_loaded = (flow_service is not None and len(flow_service.flows) > 0)
+        ai_healthy = (flow_service is not None and flow_service.ai_service.health_check()) if flow_service is not None else False
         
-        if qa_healthy and flow_healthy:
+        if qa_healthy:
             return jsonify({
-                "status": "healthy", 
-                "timestamp": time.time(), 
+                "status": "healthy",
+                "timestamp": time.time(),
                 "version": "0.1.0",
                 "qa_service": "ok",
-                "flow_service": "ok",
+                "flow_service_loaded": flow_loaded,
                 "ai_service": "ok" if ai_healthy else "disabled"
             })
         else:
             return jsonify({
                 "status": "unhealthy",
-                "qa_service": "ok" if qa_healthy else "error",
-                "flow_service": "ok" if flow_healthy else "error",
+                "qa_service": "error",
+                "flow_service_loaded": flow_loaded,
+                "ai_service": "ok" if ai_healthy else "disabled",
                 "timestamp": time.time()
             }), 500
             
