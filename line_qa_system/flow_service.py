@@ -247,16 +247,41 @@ class FlowService:
                 ai_trigger = response.text.strip()
                 logger.info(f"AI文脈判断結果: '{user_input}' -> '{ai_trigger}'")
                 
-                # 判断されたトリガーでフローを検索
+                # 判断結果がそのままトリガーに無い場合でも、文脈で最も近いトリガーにマップする
+                mapped_trigger = None
                 if ai_trigger in available_triggers:
-                    flow = self.get_flow_by_trigger(ai_trigger, step=1)
+                    mapped_trigger = ai_trigger
+                else:
+                    try:
+                        from rapidfuzz import fuzz
+                        scores = [
+                            (trigger, fuzz.token_set_ratio(ai_trigger, trigger))
+                            for trigger in available_triggers
+                        ]
+                        scores.sort(key=lambda x: x[1], reverse=True)
+                        if scores:
+                            best_trigger, best_score = scores[0]
+                            logger.info(
+                                "AI判断トリガーの近傍マッピング", 
+                                ai_trigger=ai_trigger, best_trigger=best_trigger, score=best_score
+                            )
+                            # しきい値は70程度（柔軟に判定）
+                            if best_score >= 70:
+                                mapped_trigger = best_trigger
+                    except Exception as map_err:
+                        logger.warning("トリガーの類似度マッピングに失敗しました", error=str(map_err))
+
+                if mapped_trigger:
+                    flow = self.get_flow_by_trigger(mapped_trigger, step=1)
                     if flow:
-                        logger.info(f"AI文脈判断でフローを開始: '{ai_trigger}'")
+                        logger.info(f"AI文脈判断でフローを開始: '{mapped_trigger}'")
                         return flow
                     else:
-                        logger.warning(f"AI判断されたトリガー '{ai_trigger}' のフローが見つかりません")
+                        logger.warning(f"マッピング後のトリガー '{mapped_trigger}' のフローが見つかりません")
                 else:
-                    logger.warning(f"AI判断されたトリガー '{ai_trigger}' が利用可能なトリガーにありません")
+                    logger.warning(
+                        f"AI判断されたトリガー '{ai_trigger}' が利用可能なトリガーにマッピングできませんでした"
+                    )
             else:
                 logger.warning("AI文脈判断の回答が空です")
                 
