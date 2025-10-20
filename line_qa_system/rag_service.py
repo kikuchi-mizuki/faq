@@ -101,7 +101,33 @@ class RAGService:
             # Gemini APIのみを使用したRAG機能
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                
+                # 利用可能なモデルを確認
+                try:
+                    models = genai.list_models()
+                    available_models = [model.name for model in models if 'generateContent' in model.supported_generation_methods]
+                    logger.warning(f"RAG利用可能なモデル: {available_models}")
+                    
+                    # 利用可能なモデルから選択（-001を優先）
+                    if 'models/gemini-1.5-flash-001' in available_models:
+                        self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-001')
+                        logger.info("RAG: gemini-1.5-flash-001を使用します")
+                    elif 'models/gemini-1.5-flash' in available_models:
+                        self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                        logger.info("RAG: gemini-1.5-flashを使用します")
+                    elif 'models/gemini-1.5-pro' in available_models:
+                        self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+                        logger.info("RAG: gemini-1.5-proを使用します")
+                    else:
+                        logger.warning("RAG: 利用可能なGeminiモデルが見つかりません")
+                        return
+                        
+                except Exception as model_error:
+                    logger.error("RAG: モデル一覧の取得に失敗しました", error=str(model_error))
+                    # フォールバック: 直接モデルを試す
+                    self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-001')
+                    logger.info("RAG: フォールバック: gemini-1.5-flash-001を試します")
+                
                 logger.warning("代替RAG機能（Geminiのみ）を初期化しました")
                 self.is_enabled = True
             else:

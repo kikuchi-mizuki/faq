@@ -194,7 +194,33 @@ class AIService:
             
             # Gemini APIの設定
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            
+            # 利用可能なモデルを確認
+            try:
+                models = genai.list_models()
+                available_models = [model.name for model in models if 'generateContent' in model.supported_generation_methods]
+                logger.warning(f"利用可能なモデル: {available_models}")
+                
+                # 利用可能なモデルから選択（-001を優先）
+                if 'models/gemini-1.5-flash-001' in available_models:
+                    self.model = genai.GenerativeModel('gemini-1.5-flash-001')
+                    logger.info("gemini-1.5-flash-001を使用します")
+                elif 'models/gemini-1.5-flash' in available_models:
+                    self.model = genai.GenerativeModel('gemini-1.5-flash')
+                    logger.info("gemini-1.5-flashを使用します")
+                elif 'models/gemini-1.5-pro' in available_models:
+                    self.model = genai.GenerativeModel('gemini-1.5-pro')
+                    logger.info("gemini-1.5-proを使用します")
+                else:
+                    logger.warning("利用可能なGeminiモデルが見つかりません")
+                    return
+                    
+            except Exception as model_error:
+                logger.error("モデル一覧の取得に失敗しました", error=str(model_error))
+                # フォールバック: 直接モデルを試す
+                self.model = genai.GenerativeModel('gemini-1.5-flash-001')
+                logger.info("フォールバック: gemini-1.5-flash-001を試します")
+            
             self.is_enabled = True
             logger.info("Gemini APIの初期化が完了しました")
             
