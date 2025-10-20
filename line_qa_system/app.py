@@ -341,15 +341,19 @@ def process_text_message(event: Dict[str, Any], start_time: float):
             result = qa_service.find_answer(message_text)
 
             # 応答の送信
-            if result.is_found:
-                response_text = format_answer(result.answer, result.question, result.tags)
+            if result.is_found and result.top_result is not None:
+                response_text = format_answer(
+                    result.top_result.answer,
+                    result.top_result.question,
+                    getattr(result.top_result, "tags", "")
+                )
                 line_client.reply_text(reply_token, response_text)
 
                 logger.info(
                     "回答を送信しました",
                     user_id=hashed_user_id,
-                    question_id=result.id,
-                    score=result.score,
+                    question_id=getattr(result.top_result, "id", None),
+                    score=getattr(result.top_result, "score", None),
                 )
             else:
                 # 候補がある場合は候補を提示
