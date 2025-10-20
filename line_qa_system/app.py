@@ -70,7 +70,7 @@ def initialize_services():
     try:
         logger.info("サービスの初期化を開始します")
         
-        qa_service = QAService()
+        qa_service = QAService(ai_service)
         logger.info("QAServiceの初期化が完了しました")
         
         line_client = LineClient()

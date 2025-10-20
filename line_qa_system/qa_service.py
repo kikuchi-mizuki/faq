@@ -24,7 +24,7 @@ logger = structlog.get_logger(__name__)
 class QAService:
     """Q&A検索サービス"""
 
-    def __init__(self):
+    def __init__(self, ai_service=None):
         """初期化"""
         self.sheet_id = Config.SHEET_ID_QA
         self.cache = TTLCache(maxsize=1000, ttl=Config.CACHE_TTL_SECONDS)
@@ -36,6 +36,9 @@ class QAService:
             "cache_hits": 0,
             "response_times": [],
         }
+        
+        # AIサービスの初期化
+        self.ai_service = ai_service
 
         # Google Sheets APIの初期化
         self._init_google_sheets()
@@ -148,6 +151,13 @@ class QAService:
 
             # 検索実行
             search_results = self._search_qa_items(query)
+            
+            # 結果が見つからない場合、AI文脈判断を試行
+            if not search_results and self.ai_service and self.ai_service.is_enabled:
+                ai_results = self._search_with_ai_context(query)
+                if ai_results:
+                    search_results = ai_results
+                    logger.info("AI文脈判断で回答を見つけました", query=query)
 
             # 結果の構築
             is_found = False
@@ -199,6 +209,70 @@ class QAService:
                 total_candidates=0,
                 search_time_ms=int((time.time() - start_time) * 1000),
             )
+
+    def _search_with_ai_context(self, query: str) -> List[SearchResult]:
+        """AI文脈判断によるQ&A検索"""
+        try:
+            if not self.ai_service or not self.ai_service.is_enabled:
+                return []
+            
+            # 既存のQ&A内容を取得
+            qa_contents = self._get_qa_contents_for_ai()
+            
+            # AIに文脈判断を依頼
+            context_prompt = f"""
+あなたは動画制作会社のカスタマーサポートAIです。
+ユーザーの質問を分析して、最も適切なQ&Aを選択してください。
+
+【既存のQ&A内容（参考）】
+{qa_contents}
+
+【ユーザーの質問】
+{query}
+
+【判断基準（柔軟な対応）】
+- ユーザーの意図を理解して、最も適切なQ&Aを選択
+- 似たような意味の表現でも正しく判断
+- 例：「修正について聞きたい」→ 修正に関するQ&A
+- 例：「料金が知りたい」→ 料金に関するQ&A
+- 例：「制作を依頼したい」→ 制作に関するQ&A
+
+最も適切なQ&Aの質問文を1つだけ回答してください。
+質問文のみを回答し、説明は不要です。
+"""
+            
+            # AI回答を生成
+            response = self.ai_service.model.generate_content(context_prompt)
+            if response and response.text:
+                ai_question = response.text.strip()
+                logger.info(f"AI文脈判断結果: '{query}' -> '{ai_question}'")
+                
+                # 判断された質問で検索
+                ai_results = self._search_qa_items(ai_question)
+                if ai_results:
+                    logger.info(f"AI判断された質問で回答を見つけました: '{ai_question}'")
+                    return ai_results
+                else:
+                    logger.warning(f"AI判断された質問で回答が見つかりませんでした: '{ai_question}'")
+            else:
+                logger.warning("AI文脈判断の回答が空です")
+                
+        except Exception as e:
+            logger.error("AI文脈判断中にエラーが発生しました", error=str(e))
+        
+        return []
+
+    def _get_qa_contents_for_ai(self) -> str:
+        """AI判断用のQ&A内容を取得"""
+        try:
+            qa_contents = []
+            for qa in self.qa_items:
+                qa_contents.append(f"- Q: {qa.question}\n  A: {qa.answer[:100]}...")
+            
+            return "\n".join(qa_contents) if qa_contents else "Q&A内容がありません"
+        except Exception as e:
+            logger.error("Q&A内容の取得に失敗しました", error=str(e))
+            return "Q&A内容の取得に失敗しました"
 
     def _search_qa_items(self, query: str) -> List[SearchResult]:
         """
