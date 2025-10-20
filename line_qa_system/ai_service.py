@@ -195,31 +195,24 @@ class AIService:
             # Gemini APIの設定
             genai.configure(api_key=api_key)
             
-            # 利用可能なモデルを確認
+            # 直接モデルを試す（シンプルなアプローチ）
             try:
-                models = genai.list_models()
-                available_models = [model.name for model in models if 'generateContent' in model.supported_generation_methods]
-                logger.warning(f"利用可能なモデル: {available_models}")
-                
-                # 利用可能なモデルから選択（-001を優先）
-                if 'models/gemini-1.5-flash-001' in available_models:
-                    self.model = genai.GenerativeModel('gemini-1.5-flash-001')
-                    logger.info("gemini-1.5-flash-001を使用します")
-                elif 'models/gemini-1.5-flash' in available_models:
-                    self.model = genai.GenerativeModel('gemini-1.5-flash')
-                    logger.info("gemini-1.5-flashを使用します")
-                elif 'models/gemini-1.5-pro' in available_models:
-                    self.model = genai.GenerativeModel('gemini-1.5-pro')
-                    logger.info("gemini-1.5-proを使用します")
-                else:
-                    logger.warning("利用可能なGeminiモデルが見つかりません")
-                    return
-                    
-            except Exception as model_error:
-                logger.error("モデル一覧の取得に失敗しました", error=str(model_error))
-                # フォールバック: 直接モデルを試す
                 self.model = genai.GenerativeModel('gemini-1.5-flash-001')
-                logger.info("フォールバック: gemini-1.5-flash-001を試します")
+                logger.info("gemini-1.5-flash-001で初期化を試行します")
+                
+                # テスト呼び出し
+                test_response = self.model.generate_content("テスト")
+                logger.info("Gemini APIのテスト呼び出しが成功しました")
+                
+            except Exception as model_error:
+                logger.error("gemini-1.5-flash-001でエラー", error=str(model_error))
+                # フォールバック: 他のモデルを試す
+                try:
+                    self.model = genai.GenerativeModel('gemini-1.5-flash')
+                    logger.info("フォールバック: gemini-1.5-flashを試します")
+                except Exception as fallback_error:
+                    logger.error("フォールバックも失敗", error=str(fallback_error))
+                    return
             
             self.is_enabled = True
             logger.info("Gemini APIの初期化が完了しました")
@@ -249,7 +242,8 @@ class AIService:
             生成された回答
         """
         try:
-            if not self.model:
+            if not self.model or not self.is_enabled:
+                logger.warning("AIサービスが利用できません。is_enabled={}, model={}".format(self.is_enabled, self.model is not None))
                 return self._get_fallback_response(trigger, step, user_choices, is_final)
             
             # プロンプトを生成
