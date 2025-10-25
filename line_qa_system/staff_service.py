@@ -44,11 +44,22 @@ class StaffService:
                 return
             
             # 認証情報を作成
-            if service_account_json.startswith('{'):
-                credentials_dict = json.loads(service_account_json)
-            else:
-                with open(service_account_json, 'r') as f:
-                    credentials_dict = json.load(f)
+            import base64
+            try:
+                if service_account_json.startswith('{'):
+                    # 直接JSON文字列の場合
+                    credentials_dict = json.loads(service_account_json)
+                elif service_account_json.startswith('ewogICJ0eXBlIjo'):
+                    # base64エンコードされた場合（Railway）
+                    decoded_json = base64.b64decode(service_account_json).decode('utf-8')
+                    credentials_dict = json.loads(decoded_json)
+                else:
+                    # ファイルパスの場合
+                    with open(service_account_json, 'r') as f:
+                        credentials_dict = json.load(f)
+            except Exception as e:
+                logger.error("認証情報の解析に失敗しました", error=str(e))
+                return
             
             credentials = Credentials.from_service_account_info(
                 credentials_dict,
