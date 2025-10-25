@@ -290,17 +290,15 @@ def process_text_message(event: Dict[str, Any], start_time: float):
         
         # 認証チェック（認証が有効な場合）
         if Config.AUTH_ENABLED:
-            from .simple_auth_flow import SimpleAuthFlow
-            auth_flow = SimpleAuthFlow()
+            from .new_auth_flow import NewAuthFlow
+            auth_flow = NewAuthFlow()
             
             # 認証フローの処理
             if auth_flow.process_auth_flow(event):
                 return  # 認証フローで処理された場合は終了
             
             # 認証済みでない場合は制限メッセージを送信
-            from .auth_service import AuthService
-            auth_service = AuthService()
-            if not auth_service.is_authenticated(user_id):
+            if not auth_flow.is_authenticated(user_id):
                 auth_flow.send_auth_required_message(reply_token)
                 logger.info("未認証ユーザーからのアクセス", user_id=hashed_user_id)
                 return
