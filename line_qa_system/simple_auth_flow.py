@@ -25,6 +25,9 @@ class SimpleAuthFlow:
         self.store_service = None
         self.line_client = None
         
+        # サービスを初期化
+        self.initialize_services()
+        
         logger.info("簡略化認証フローを初期化しました")
     
     def initialize_services(self):
