@@ -20,19 +20,30 @@ logger = structlog.get_logger(__name__)
 
 class NewAuthFlow:
     """新しい認証フロー - シンプルで確実"""
+    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        """シングルトンパターン"""
+        if cls._instance is None:
+            cls._instance = super(NewAuthFlow, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self):
-        """初期化"""
-        self.line_client = LineClient()
-        self.store_service = StoreService()
-        self.staff_service = StaffService()
-        
-        # 認証状態の管理（メモリ内）
-        self.auth_states = {}  # ユーザーID -> 認証状態
-        self.temp_data = {}    # ユーザーID -> 一時データ
-        self.authenticated_users = {}  # ユーザーID -> 認証情報
-        
-        logger.info("新しい認証フローを初期化しました")
+        """初期化（一度だけ実行）"""
+        if not self._initialized:
+            self.line_client = LineClient()
+            self.store_service = StoreService()
+            self.staff_service = StaffService()
+            
+            # 認証状態の管理（メモリ内）
+            self.auth_states = {}  # ユーザーID -> 認証状態
+            self.temp_data = {}    # ユーザーID -> 一時データ
+            self.authenticated_users = {}  # ユーザーID -> 認証情報
+            
+            self._initialized = True
+            logger.info("新しい認証フローを初期化しました（シングルトン）")
 
     def process_auth_flow(self, event: Dict[str, Any]) -> bool:
         """
@@ -57,10 +68,12 @@ class NewAuthFlow:
             # 現在の認証状態を取得
             current_state = self.auth_states.get(user_id, 'not_started')
             
-            logger.debug("認証フロー処理中", 
+            logger.info("認証フロー処理中", 
                         user_id=hashed_user_id, 
                         current_state=current_state, 
-                        message_text=message_text)
+                        message_text=message_text,
+                        auth_states_count=len(self.auth_states),
+                        authenticated_count=len(self.authenticated_users))
 
             # 認証開始
             if message_text.strip().lower() in ["認証", "auth", "ログイン", "login"]:
@@ -185,7 +198,9 @@ class NewAuthFlow:
             logger.info("認証が完了しました", 
                        user_id=hash_user_id(user_id), 
                        store_code=store_code, 
-                       staff_id=staff_id)
+                       staff_id=staff_id,
+                       final_auth_state=self.auth_states.get(user_id),
+                       is_authenticated=self.is_authenticated(user_id))
             return True
 
         except Exception as e:
