@@ -71,6 +71,10 @@ class SimpleAuthFlow:
             elif message_text.strip().startswith('社員番号:'):
                 # 社員番号入力
                 return self.process_staff_id_input(user_id, message_text, reply_token)
+            elif message_text.strip().startswith('STORE'):
+                # 店舗コードのみの入力（STORE004など）
+                store_code = message_text.strip()
+                return self.process_store_code_input(user_id, f"店舗コード:{store_code}", reply_token)
             else:
                 # 認証が必要
                 self.send_auth_required_message(reply_token)
