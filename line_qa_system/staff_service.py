@@ -10,6 +10,7 @@ from datetime import datetime
 import structlog
 
 from .config import Config
+from .utils import hash_user_id
 
 logger = structlog.get_logger(__name__)
 
@@ -258,6 +259,44 @@ class StaffService:
                 'error': f'ステータス変更に失敗しました: {str(e)}'
             }
     
+    def update_auth_info(self, store_code: str, staff_id: str, user_id: str, auth_time: str):
+        """スタッフの認証情報をスプレッドシートに更新"""
+        try:
+            key = f"{store_code}_{staff_id}"
+            if key not in self.staff_data:
+                logger.warning("認証情報更新対象のスタッフが見つかりません", 
+                              store_code=store_code, 
+                              staff_id=staff_id)
+                return
+            
+            # 認証情報を更新
+            self.staff_data[key]['line_user_id'] = user_id
+            self.staff_data[key]['auth_time'] = auth_time
+            self.staff_data[key]['last_activity'] = auth_time
+            
+            # スプレッドシートに反映
+            self.update_staff_in_sheet(store_code, staff_id, {
+                'line_user_id': user_id,
+                'auth_time': auth_time,
+                'last_activity': auth_time
+            })
+            
+            # データを再読み込みして最新の状態を反映
+            self.load_staff_data()
+            
+            logger.info("スタッフの認証情報を更新しました", 
+                       store_code=store_code, 
+                       staff_id=staff_id,
+                       user_id=hash_user_id(user_id),
+                       auth_time=auth_time)
+            
+        except Exception as e:
+            logger.error("スタッフの認証情報更新に失敗しました", 
+                        store_code=store_code, 
+                        staff_id=staff_id,
+                        error=str(e))
+            raise
+    
     def update_last_activity(self, store_code: str, staff_id: str):
         """スタッフの最終利用日時を更新"""
         try:
@@ -452,14 +491,55 @@ class StaffService:
     def update_staff_in_sheet(self, store_code: str, staff_id: str, updates: Dict[str, Any]):
         """スプレッドシートのスタッフ情報を更新"""
         try:
-            from .qa_service import QAService
-            qa_service = QAService()
+            # 直接Google Sheets APIを使用してデータを取得・更新
+            import gspread
+            from google.oauth2.service_account import Credentials
+            import json
+            import base64
             
-            # スプレッドシートから現在のデータを取得
-            sheet_data = qa_service.get_sheet_data(self.sheet_name)
+            # 認証情報を取得
+            service_account_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+            if not service_account_json:
+                logger.warning("GOOGLE_SERVICE_ACCOUNT_JSONが設定されていません")
+                return
             
-            if not sheet_data:
-                logger.warning("スタッフ管理シートのデータが取得できません")
+            # 認証情報を作成
+            try:
+                if service_account_json.startswith('{'):
+                    # 直接JSON文字列の場合
+                    credentials_dict = json.loads(service_account_json)
+                elif service_account_json.startswith('ewogICJ0eXBlIjo'):
+                    # base64エンコードされた場合（Railway）
+                    decoded_json = base64.b64decode(service_account_json).decode('utf-8')
+                    credentials_dict = json.loads(decoded_json)
+                else:
+                    # ファイルパスの場合
+                    with open(service_account_json, 'r') as f:
+                        credentials_dict = json.load(f)
+            except Exception as e:
+                logger.error("認証情報の解析に失敗しました", error=str(e))
+                return
+            
+            credentials = Credentials.from_service_account_info(
+                credentials_dict,
+                scopes=['https://www.googleapis.com/auth/spreadsheets']
+            )
+            
+            # gspreadクライアントを初期化
+            gc = gspread.authorize(credentials)
+            
+            # スプレッドシートを開く
+            sheet_id = os.environ.get('SHEET_ID_QA')
+            if not sheet_id:
+                logger.warning("SHEET_ID_QAが設定されていません")
+                return
+            
+            spreadsheet = gc.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(self.sheet_name)
+            sheet_data = worksheet.get_all_values()
+            
+            if not sheet_data or len(sheet_data) < 2:
+                logger.warning("スタッフ管理シートにデータがありません")
                 return
             
             # 該当するスタッフの行を見つけて更新
@@ -480,7 +560,7 @@ class StaffService:
                         # 他のフィールドも同様に処理
                     
                     # スプレッドシートを更新
-                    qa_service.update_sheet_row(self.sheet_name, i, row)
+                    worksheet.update(f'A{i}:J{i}', [row])
                     break
             
             logger.info("スタッフ情報をスプレッドシートで更新しました", 

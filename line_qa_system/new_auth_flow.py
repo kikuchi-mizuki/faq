@@ -212,13 +212,15 @@ class NewAuthFlow:
     def complete_auth(self, user_id: str, store_code: str, staff_id: str, store: Dict, staff: Dict):
         """認証を完了"""
         try:
-            # 認証情報を保存
+            auth_time = datetime.now().isoformat()
+            
+            # 認証情報をメモリに保存
             self.authenticated_users[user_id] = {
                 'store_code': store_code,
                 'staff_id': staff_id,
                 'store_name': store['store_name'],
                 'staff_name': staff['staff_name'],
-                'auth_time': datetime.now().isoformat()
+                'auth_time': auth_time
             }
             
             # 認証状態を完了に設定
@@ -228,10 +230,14 @@ class NewAuthFlow:
             if user_id in self.temp_data:
                 del self.temp_data[user_id]
             
+            # スプレッドシートに認証情報を記録
+            self.update_staff_auth_info(store_code, staff_id, user_id, auth_time)
+            
             logger.info("認証情報を保存しました", 
                        user_id=hash_user_id(user_id), 
                        store_code=store_code, 
-                       staff_id=staff_id)
+                       staff_id=staff_id,
+                       auth_time=auth_time)
             
         except Exception as e:
             logger.error("認証完了処理に失敗しました", error=str(e))
@@ -251,6 +257,22 @@ class NewAuthFlow:
                 "「認証」と入力してください。"
         self.line_client.reply_text(reply_token, message)
         logger.info("認証が必要メッセージを送信しました")
+
+    def update_staff_auth_info(self, store_code: str, staff_id: str, user_id: str, auth_time: str):
+        """スタッフの認証情報をスプレッドシートに更新"""
+        try:
+            # StaffServiceを使用してスプレッドシートを更新
+            self.staff_service.update_auth_info(store_code, staff_id, user_id, auth_time)
+            logger.info("スプレッドシートに認証情報を記録しました", 
+                       store_code=store_code, 
+                       staff_id=staff_id, 
+                       user_id=hash_user_id(user_id))
+        except Exception as e:
+            logger.error("スプレッドシートの更新に失敗しました", 
+                        error=str(e), 
+                        store_code=store_code, 
+                        staff_id=staff_id)
+            # スプレッドシートの更新に失敗しても認証は継続
 
     def get_stats(self) -> Dict[str, Any]:
         """認証統計を取得"""
