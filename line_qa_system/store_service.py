@@ -33,12 +33,41 @@ class StoreService:
     def load_stores_from_sheet(self):
         """スプレッドシートから店舗データを読み込み"""
         try:
-            # Google Sheetsサービスを使用してデータを取得
-            from .qa_service import QAService
-            qa_service = QAService()
+            # 直接Google Sheets APIを使用してデータを取得
+            import gspread
+            from google.oauth2.service_account import Credentials
+            import json
             
-            # 店舗管理シートからデータを取得
-            sheet_data = qa_service.get_sheet_data(self.sheet_name)
+            # 認証情報を取得
+            service_account_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+            if not service_account_json:
+                logger.warning("GOOGLE_SERVICE_ACCOUNT_JSONが設定されていません")
+                return
+            
+            # 認証情報を作成
+            if service_account_json.startswith('{'):
+                credentials_dict = json.loads(service_account_json)
+            else:
+                with open(service_account_json, 'r') as f:
+                    credentials_dict = json.load(f)
+            
+            credentials = Credentials.from_service_account_info(
+                credentials_dict,
+                scopes=['https://www.googleapis.com/auth/spreadsheets']
+            )
+            
+            # gspreadクライアントを初期化
+            gc = gspread.authorize(credentials)
+            
+            # スプレッドシートを開く
+            sheet_id = os.environ.get('SHEET_ID_QA')
+            if not sheet_id:
+                logger.warning("SHEET_ID_QAが設定されていません")
+                return
+            
+            spreadsheet = gc.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(self.sheet_name)
+            sheet_data = worksheet.get_all_values()
             
             if not sheet_data or len(sheet_data) < 2:
                 logger.warning("店舗管理シートにデータがありません")
