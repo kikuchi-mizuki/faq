@@ -46,6 +46,24 @@ class Config:
 
     # セキュリティ設定
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+    
+    # 認証設定
+    AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
+    AUTH_TIMEOUT = int(os.environ.get("AUTH_TIMEOUT", "300"))
+    AUTH_MAX_ATTEMPTS = int(os.environ.get("AUTH_MAX_ATTEMPTS", "3"))
+    AUTH_SESSION_DAYS = int(os.environ.get("AUTH_SESSION_DAYS", "30"))
+    
+    # 店舗管理設定
+    STORE_MANAGEMENT_SHEET = os.environ.get("STORE_MANAGEMENT_SHEET", "store_management")
+    STORE_CODE_PREFIX = os.environ.get("STORE_CODE_PREFIX", "STORE")
+    
+    # スタッフ管理設定
+    STAFF_MANAGEMENT_SHEET = os.environ.get("STAFF_MANAGEMENT_SHEET", "staff_management")
+    
+    # LINEログイン設定
+    LINE_LOGIN_CHANNEL_ID = os.environ.get("LINE_LOGIN_CHANNEL_ID", "")
+    LINE_LOGIN_CHANNEL_SECRET = os.environ.get("LINE_LOGIN_CHANNEL_SECRET", "")
+    LINE_LOGIN_REDIRECT_URI = os.environ.get("LINE_LOGIN_REDIRECT_URI", "")
 
     @classmethod
     def validate(cls) -> List[str]:

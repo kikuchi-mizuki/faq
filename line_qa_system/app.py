@@ -209,6 +209,8 @@ def callback():
         for event in body.get("events", []):
             if event["type"] == "message" and event["message"]["type"] == "text":
                 process_text_message(event, start_time)
+            elif event["type"] == "postback":
+                process_postback_message(event, start_time)
 
         return jsonify({"status": "ok"})
 
@@ -217,8 +219,43 @@ def callback():
         abort(500, description="内部エラーが発生しました")
 
 
+def process_postback_message(event: Dict[str, Any], start_time: float):
+    """ポストバックメッセージの処理"""
+    user_id = event["source"]["userId"]
+    reply_token = event["replyToken"]
+    
+    # ユーザーIDのハッシュ化
+    hashed_user_id = hash_user_id(user_id)
+    
+    logger.info("ポストバックを受信しました", user_id=hashed_user_id)
+    
+    try:
+        # 認証フローの処理
+        if Config.AUTH_ENABLED:
+            from .auth_flow import AuthFlow
+            auth_flow = AuthFlow()
+            
+            if auth_flow.handle_postback(event):
+                return  # 認証フローで処理された場合は終了
+        
+        # その他のポストバック処理
+        # 必要に応じて追加
+        
+    except Exception as e:
+        logger.error("ポストバック処理中にエラーが発生しました", 
+                    user_id=hashed_user_id, 
+                    error=str(e), 
+                    exc_info=True)
+        
+        # エラー時の応答
+        try:
+            line_client.reply_text(reply_token, "申し訳ございません。一時的なエラーが発生しました。")
+        except Exception as reply_error:
+            logger.error("エラーメッセージの送信に失敗しました", error=str(reply_error))
+
+
 def process_text_message(event: Dict[str, Any], start_time: float):
-    """テキストメッセージの処理"""
+    """テキストメッセージの処理（認証チェック付き）"""
     user_id = event["source"]["userId"]
     message_text = event["message"]["text"]
     reply_token = event["replyToken"]
@@ -242,6 +279,23 @@ def process_text_message(event: Dict[str, Any], start_time: float):
             except Exception as e:
                 logger.error("エラーメッセージの送信に失敗しました", error=str(e))
             return
+        
+        # 認証チェック（認証が有効な場合）
+        if Config.AUTH_ENABLED:
+            from .auth_flow import AuthFlow
+            auth_flow = AuthFlow()
+            
+            # 認証フローの処理
+            if auth_flow.process_auth_flow(event):
+                return  # 認証フローで処理された場合は終了
+            
+            # 認証済みでない場合は制限メッセージを送信
+            from .auth_service import AuthService
+            auth_service = AuthService()
+            if not auth_service.is_authenticated(user_id):
+                auth_flow.send_restricted_message(reply_token)
+                logger.info("未認証ユーザーからのアクセス", user_id=hashed_user_id)
+                return
         # キャンセルコマンドのチェック
         if message_text.strip().lower() in ["キャンセル", "cancel", "やめる", "終了"]:
             if flow_service.is_in_flow(user_id):
