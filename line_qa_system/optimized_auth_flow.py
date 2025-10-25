@@ -428,6 +428,61 @@ class OptimizedAuthFlow:
         """キャッシュを強制更新"""
         self.cache_valid = False
         self._update_cache_if_needed()
+    
+    def check_all_users_status(self):
+        """全認証済みユーザーのステータスを即座にチェック"""
+        try:
+            logger.info("全認証済みユーザーのステータスチェックを開始します")
+            
+            # キャッシュを強制更新
+            self.force_cache_update()
+            
+            # 認証済みユーザーのリストをコピー（変更中にエラーが発生しないように）
+            users_to_check = list(self.authenticated_users.keys())
+            deauthenticated_users = []
+            
+            for user_id in users_to_check:
+                try:
+                    auth_info = self.authenticated_users.get(user_id)
+                    if not auth_info:
+                        continue
+                    
+                    store_code = auth_info.get('store_code')
+                    staff_id = auth_info.get('staff_id')
+                    
+                    if store_code and staff_id:
+                        # スタッフのステータスをチェック
+                        staff = self.staff_service.get_staff(store_code, staff_id)
+                        if not staff or staff.get('status') != 'active':
+                            # ステータスが無効な場合は認証を取り消し
+                            logger.info("バッチチェックで無効なステータスを検出", 
+                                       user_id=hash_user_id(user_id), 
+                                       store_code=store_code, 
+                                       staff_id=staff_id,
+                                       status=staff.get('status') if staff else 'not_found')
+                            
+                            self.deauthenticate_user(user_id)
+                            deauthenticated_users.append(user_id)
+                
+                except Exception as e:
+                    logger.error("ユーザーのステータスチェック中にエラーが発生しました", 
+                               user_id=hash_user_id(user_id), 
+                               error=str(e))
+            
+            logger.info("全認証済みユーザーのステータスチェックが完了しました", 
+                       total_checked=len(users_to_check),
+                       deauthenticated_count=len(deauthenticated_users),
+                       deauthenticated_users=[hash_user_id(uid) for uid in deauthenticated_users])
+            
+            return {
+                'total_checked': len(users_to_check),
+                'deauthenticated_count': len(deauthenticated_users),
+                'deauthenticated_users': deauthenticated_users
+            }
+            
+        except Exception as e:
+            logger.error("全ユーザーのステータスチェックに失敗しました", error=str(e))
+            return None
 
     def get_stats(self) -> Dict[str, Any]:
         """認証統計を取得"""

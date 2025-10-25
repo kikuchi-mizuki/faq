@@ -694,6 +694,36 @@ def force_cache_update():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/admin/check-all-users-status", methods=["POST"])
+# @require_admin  # 一時的に無効化
+def check_all_users_status():
+    """全認証済みユーザーのステータスを即座にチェック"""
+    try:
+        from .optimized_auth_flow import OptimizedAuthFlow
+        
+        auth_flow = OptimizedAuthFlow()
+        result = auth_flow.check_all_users_status()
+        
+        if result:
+            logger.info("管理者による全ユーザーステータスチェックが完了しました")
+            return jsonify({
+                "status": "success",
+                "message": "全ユーザーのステータスチェックが完了しました",
+                "total_checked": result['total_checked'],
+                "deauthenticated_count": result['deauthenticated_count'],
+                "deauthenticated_users": [hash_user_id(uid) for uid in result['deauthenticated_users']]
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "全ユーザーのステータスチェックに失敗しました"
+            }), 500
+        
+    except Exception as e:
+        logger.error("全ユーザーステータスチェックに失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/deauthenticate", methods=["POST"])
 # @require_admin  # 一時的に無効化
 def deauthenticate_user():
