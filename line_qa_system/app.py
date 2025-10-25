@@ -619,44 +619,6 @@ def get_auto_reload_status():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/admin/deauthenticate", methods=["POST"])
-# @require_admin  # 一時的に無効化
-def deauthenticate_user():
-    """ユーザーの認証を取り消す"""
-    try:
-        from .new_auth_flow import NewAuthFlow
-        
-        data = request.get_json()
-        if not data or 'user_id' not in data:
-            return jsonify({
-                "status": "error", 
-                "message": "user_idが必要です"
-            }), 400
-        
-        user_id = data['user_id']
-        auth_flow = NewAuthFlow()
-        
-        # 認証を取り消し
-        success = auth_flow.deauthenticate_user(user_id)
-        
-        if success:
-            logger.info("管理者による認証取り消しが完了しました", 
-                       user_id=hash_user_id(user_id))
-            return jsonify({
-                "status": "success",
-                "message": f"ユーザー {hash_user_id(user_id)} の認証を取り消しました"
-            })
-        else:
-            return jsonify({
-                "status": "error",
-                "message": f"ユーザー {hash_user_id(user_id)} の認証取り消しに失敗しました"
-            }), 400
-            
-    except Exception as e:
-        logger.error("認証取り消しに失敗しました", error=str(e))
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
 @app.route("/admin/authenticated-users", methods=["GET"])
 # @require_admin  # 一時的に無効化
 def get_authenticated_users():
