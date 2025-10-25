@@ -28,6 +28,14 @@ from .utils import verify_line_signature, hash_user_id
 # 環境変数の読み込み
 load_dotenv()
 
+# 認証システム用スプレッドシートの自動作成
+try:
+    from auto_setup import auto_setup_auth_sheets
+    auto_setup_auth_sheets()
+    logger.info("認証システム用スプレッドシートの自動作成が完了しました")
+except Exception as e:
+    logger.warning("認証システム用スプレッドシートの自動作成に失敗しました", error=str(e))
+
 # 構造化ログの設定
 structlog.configure(
     processors=[
