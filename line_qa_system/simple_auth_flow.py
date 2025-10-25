@@ -169,10 +169,25 @@ class SimpleAuthFlow:
                             f"Botをご利用いただけます。"
             self.line_client.reply_text(reply_token, success_message)
             
-            # 認証情報を保存
-            self.auth_service.complete_auth(user_id, store_code, staff_id, {})
+            # 認証情報を簡略化して保存
+            try:
+                # 認証状態を直接設定
+                self.auth_service.set_auth_state(user_id, 'authenticated')
+                
+                # 認証情報をメモリに保存
+                self.auth_service.authenticated_users[user_id] = {
+                    'store_code': store_code,
+                    'staff_id': staff_id,
+                    'store_name': store['store_name'],
+                    'staff_name': staff['staff_name'],
+                    'auth_time': datetime.now().isoformat()
+                }
+                
+                logger.info("認証が完了しました", user_id=user_id, store_code=store_code, staff_id=staff_id)
+            except Exception as e:
+                logger.error("認証情報の保存に失敗しました", error=str(e))
+                # エラーが発生しても認証完了メッセージは送信済み
             
-            logger.info("認証が完了しました", user_id=user_id, store_code=store_code, staff_id=staff_id)
             return True
             
         except Exception as e:

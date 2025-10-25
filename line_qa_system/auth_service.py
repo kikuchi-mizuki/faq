@@ -30,6 +30,7 @@ class AuthService:
         self.auth_states = {}  # 認証フローの状態管理
         self.pending_auth = {}  # 認証待ちのユーザー
         self.temp_data = {}  # 一時的な認証データ
+        self.authenticated_users = {}  # 認証済みユーザーの情報
         
         logger.info("認証サービスを初期化しました", 
                    auth_enabled=self.auth_enabled,
@@ -42,7 +43,11 @@ class AuthService:
             return True  # 認証が無効な場合は常に認証済み
         
         try:
-            # セッションから認証状態を確認
+            # メモリ内の認証情報をチェック
+            if user_id in self.authenticated_users:
+                return True
+            
+            # セッションから認証状態を確認（フォールバック）
             from .session_service import SessionService
             session_service = SessionService()
             session = session_service.get_session(user_id)
