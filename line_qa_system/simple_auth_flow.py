@@ -96,6 +96,7 @@ class SimpleAuthFlow:
                         return self.process_staff_id_input(user_id, message_text, reply_token)
                 else:
                     # 状態が合わない場合は認証をリセット
+                    logger.warning("認証状態が不正です", user_id=user_id, current_state=current_state, message_text=message_text)
                     self.send_auth_required_message(reply_token)
                     return True
             else:
@@ -189,6 +190,10 @@ class SimpleAuthFlow:
             
             # 認証完了
             store = self.store_service.get_store(store_code)
+            if not store:
+                self.line_client.reply_text(reply_token, "店舗情報の取得に失敗しました。\n\n最初から認証をやり直してください。")
+                return True
+            
             success_message = f"認証が完了しました！\n\n" \
                             f"店舗: {store['store_name']}\n" \
                             f"スタッフ: {staff['staff_name']}\n\n" \
