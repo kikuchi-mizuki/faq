@@ -619,6 +619,78 @@ def get_auto_reload_status():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/admin/deauthenticate", methods=["POST"])
+# @require_admin  # 一時的に無効化
+def deauthenticate_user():
+    """ユーザーの認証を取り消す"""
+    try:
+        from .new_auth_flow import NewAuthFlow
+        
+        data = request.get_json()
+        if not data or 'user_id' not in data:
+            return jsonify({
+                "status": "error", 
+                "message": "user_idが必要です"
+            }), 400
+        
+        user_id = data['user_id']
+        auth_flow = NewAuthFlow()
+        
+        # 認証を取り消し
+        success = auth_flow.deauthenticate_user(user_id)
+        
+        if success:
+            logger.info("管理者による認証取り消しが完了しました", 
+                       user_id=hash_user_id(user_id))
+            return jsonify({
+                "status": "success",
+                "message": f"ユーザー {hash_user_id(user_id)} の認証を取り消しました"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"ユーザー {hash_user_id(user_id)} の認証取り消しに失敗しました"
+            }), 400
+            
+    except Exception as e:
+        logger.error("認証取り消しに失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/authenticated-users", methods=["GET"])
+# @require_admin  # 一時的に無効化
+def get_authenticated_users():
+    """認証済みユーザー一覧を取得"""
+    try:
+        from .new_auth_flow import NewAuthFlow
+        
+        auth_flow = NewAuthFlow()
+        stats = auth_flow.get_stats()
+        
+        # 認証済みユーザーの詳細情報を取得
+        authenticated_users = []
+        for user_id, auth_info in auth_flow.authenticated_users.items():
+            authenticated_users.append({
+                "user_id": hash_user_id(user_id),
+                "store_code": auth_info.get('store_code'),
+                "staff_id": auth_info.get('staff_id'),
+                "store_name": auth_info.get('store_name'),
+                "staff_name": auth_info.get('staff_name'),
+                "auth_time": auth_info.get('auth_time')
+            })
+        
+        return jsonify({
+            "status": "success",
+            "total_authenticated": stats['total_authenticated'],
+            "authenticated_users": authenticated_users,
+            "last_updated": stats['last_updated']
+        })
+        
+    except Exception as e:
+        logger.error("認証済みユーザー一覧の取得に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.errorhandler(400)
 def bad_request(error):
     return jsonify({"error": "Bad Request", "message": error.description}), 400

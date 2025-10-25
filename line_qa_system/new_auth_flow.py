@@ -187,7 +187,22 @@ class NewAuthFlow:
                 return True
 
             # 認証完了
-            self.complete_auth(user_id, store_code, staff_id, store, staff)
+            logger.info("認証完了処理を開始します", 
+                       user_id=hash_user_id(user_id), 
+                       store_code=store_code, 
+                       staff_id=staff_id)
+            
+            try:
+                self.complete_auth(user_id, store_code, staff_id, store, staff)
+                logger.info("認証完了処理が成功しました", 
+                           user_id=hash_user_id(user_id))
+            except Exception as e:
+                logger.error("認証完了処理でエラーが発生しました", 
+                           user_id=hash_user_id(user_id), 
+                           error=str(e))
+                self.line_client.reply_text(reply_token, 
+                    "認証の完了処理中にエラーが発生しました。再度お試しください。")
+                return True
             
             success_message = f"認証が完了しました！\n\n" \
                             f"店舗: {store['store_name']}\n" \
@@ -273,6 +288,55 @@ class NewAuthFlow:
                         store_code=store_code, 
                         staff_id=staff_id)
             # スプレッドシートの更新に失敗しても認証は継続
+
+    def deauthenticate_user(self, user_id: str) -> bool:
+        """ユーザーの認証を取り消す"""
+        try:
+            if user_id in self.authenticated_users:
+                # 認証情報を取得
+                auth_info = self.authenticated_users[user_id]
+                store_code = auth_info.get('store_code')
+                staff_id = auth_info.get('staff_id')
+                
+                # メモリから認証情報を削除
+                del self.authenticated_users[user_id]
+                
+                # 認証状態をリセット
+                self.auth_states[user_id] = 'not_started'
+                
+                # スプレッドシートから認証情報をクリア
+                if store_code and staff_id:
+                    self.clear_staff_auth_info(store_code, staff_id)
+                
+                logger.info("ユーザーの認証を取り消しました", 
+                           user_id=hash_user_id(user_id), 
+                           store_code=store_code, 
+                           staff_id=staff_id)
+                return True
+            else:
+                logger.warning("認証取り消し対象のユーザーが見つかりません", 
+                              user_id=hash_user_id(user_id))
+                return False
+                
+        except Exception as e:
+            logger.error("認証取り消しに失敗しました", 
+                        user_id=hash_user_id(user_id), 
+                        error=str(e))
+            return False
+
+    def clear_staff_auth_info(self, store_code: str, staff_id: str):
+        """スタッフの認証情報をスプレッドシートからクリア"""
+        try:
+            # StaffServiceを使用してスプレッドシートを更新
+            self.staff_service.clear_auth_info(store_code, staff_id)
+            logger.info("スプレッドシートから認証情報をクリアしました", 
+                       store_code=store_code, 
+                       staff_id=staff_id)
+        except Exception as e:
+            logger.error("スプレッドシートの認証情報クリアに失敗しました", 
+                        error=str(e), 
+                        store_code=store_code, 
+                        staff_id=staff_id)
 
     def get_stats(self) -> Dict[str, Any]:
         """認証統計を取得"""

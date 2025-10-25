@@ -297,6 +297,41 @@ class StaffService:
                         error=str(e))
             raise
     
+    def clear_auth_info(self, store_code: str, staff_id: str):
+        """スタッフの認証情報をスプレッドシートからクリア"""
+        try:
+            key = f"{store_code}_{staff_id}"
+            if key not in self.staff_data:
+                logger.warning("認証情報クリア対象のスタッフが見つかりません", 
+                              store_code=store_code, 
+                              staff_id=staff_id)
+                return
+            
+            # 認証情報をクリア
+            self.staff_data[key]['line_user_id'] = ''
+            self.staff_data[key]['auth_time'] = ''
+            # last_activityは保持（最終活動日時は残す）
+            
+            # スプレッドシートに反映
+            self.update_staff_in_sheet(store_code, staff_id, {
+                'line_user_id': '',
+                'auth_time': ''
+            })
+            
+            # データを再読み込みして最新の状態を反映
+            self.load_staff_data()
+            
+            logger.info("スタッフの認証情報をクリアしました", 
+                       store_code=store_code, 
+                       staff_id=staff_id)
+            
+        except Exception as e:
+            logger.error("スタッフの認証情報クリアに失敗しました", 
+                        store_code=store_code, 
+                        staff_id=staff_id,
+                        error=str(e))
+            raise
+    
     def update_last_activity(self, store_code: str, staff_id: str):
         """スタッフの最終利用日時を更新"""
         try:
