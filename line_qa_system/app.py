@@ -298,9 +298,25 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                 return  # 認証フローで処理された場合は終了
             
             # 認証済みでない場合は制限メッセージを送信
-            if not auth_flow.is_authenticated(user_id):
-                auth_flow.send_auth_required_message(reply_token)
-                logger.info("未認証ユーザーからのアクセス", user_id=hashed_user_id)
+            try:
+                is_authenticated = auth_flow.is_authenticated(user_id)
+                logger.info("認証チェック結果", 
+                           user_id=hashed_user_id, 
+                           is_authenticated=is_authenticated)
+                
+                if not is_authenticated:
+                    auth_flow.send_auth_required_message(reply_token)
+                    logger.info("未認証ユーザーからのアクセス", user_id=hashed_user_id)
+                    return
+            except Exception as e:
+                logger.error("認証チェック中にエラーが発生しました", 
+                           user_id=hashed_user_id, 
+                           error=str(e))
+                # エラーが発生した場合は安全のため認証が必要メッセージを送信
+                try:
+                    auth_flow.send_auth_required_message(reply_token)
+                except:
+                    pass
                 return
         # キャンセルコマンドのチェック
         if message_text.strip().lower() in ["キャンセル", "cancel", "やめる", "終了"]:

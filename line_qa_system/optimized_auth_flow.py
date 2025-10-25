@@ -316,30 +316,68 @@ class OptimizedAuthFlow:
 
     def is_authenticated(self, user_id: str) -> bool:
         """ユーザーが認証済みかチェック（ステータスも確認）"""
-        if user_id not in self.authenticated_users:
-            return False
-        
-        # 認証済みユーザーのステータスをチェック
-        auth_info = self.authenticated_users[user_id]
-        store_code = auth_info.get('store_code')
-        staff_id = auth_info.get('staff_id')
-        
-        if store_code and staff_id:
-            # キャッシュを更新（必要に応じて）
-            self._update_cache_if_needed()
+        try:
+            if user_id not in self.authenticated_users:
+                logger.debug("ユーザーが認証済みユーザーリストに存在しません", 
+                           user_id=hash_user_id(user_id))
+                return False
             
-            # スタッフのステータスをチェック
-            staff = self.staff_service.get_staff(store_code, staff_id)
-            if not staff or staff.get('status') != 'active':
-                # ステータスが無効な場合は認証を取り消し
-                logger.info("スタッフのステータスが無効になったため認証を取り消します", 
+            # 認証済みユーザーのステータスをチェック
+            auth_info = self.authenticated_users[user_id]
+            store_code = auth_info.get('store_code')
+            staff_id = auth_info.get('staff_id')
+            
+            logger.debug("認証済みユーザーのステータスをチェック中", 
+                        user_id=hash_user_id(user_id), 
+                        store_code=store_code, 
+                        staff_id=staff_id)
+            
+            if store_code and staff_id:
+                # キャッシュを更新（必要に応じて）
+                self._update_cache_if_needed()
+                
+                # スタッフのステータスをチェック
+                staff = self.staff_service.get_staff(store_code, staff_id)
+                if not staff:
+                    logger.warning("スタッフ情報が見つかりません", 
+                                  user_id=hash_user_id(user_id), 
+                                  store_code=store_code, 
+                                  staff_id=staff_id)
+                    self.deauthenticate_user(user_id)
+                    return False
+                
+                staff_status = staff.get('status')
+                logger.info("スタッフのステータスを確認", 
                            user_id=hash_user_id(user_id), 
                            store_code=store_code, 
-                           staff_id=staff_id)
+                           staff_id=staff_id, 
+                           status=staff_status)
+                
+                if staff_status != 'active':
+                    # ステータスが無効な場合は認証を取り消し
+                    logger.info("スタッフのステータスが無効になったため認証を取り消します", 
+                               user_id=hash_user_id(user_id), 
+                               store_code=store_code, 
+                               staff_id=staff_id, 
+                               status=staff_status)
+                    self.deauthenticate_user(user_id)
+                    return False
+            
+            logger.debug("認証チェック完了", 
+                        user_id=hash_user_id(user_id), 
+                        result=True)
+            return True
+            
+        except Exception as e:
+            logger.error("認証チェック中にエラーが発生しました", 
+                        user_id=hash_user_id(user_id), 
+                        error=str(e))
+            # エラーが発生した場合は安全のため認証を取り消し
+            try:
                 self.deauthenticate_user(user_id)
-                return False
-        
-        return True
+            except:
+                pass
+            return False
 
     def get_auth_info(self, user_id: str) -> Optional[Dict]:
         """認証情報を取得"""
@@ -349,8 +387,11 @@ class OptimizedAuthFlow:
         """認証が必要な旨を伝えるメッセージを送信"""
         message = "このBotをご利用いただくには認証が必要です。\n\n" \
                 "「認証」と入力してください。"
-        self.line_client.reply_text(reply_token, message)
-        logger.info("認証が必要メッセージを送信しました")
+        try:
+            self.line_client.reply_text(reply_token, message)
+            logger.info("認証が必要メッセージを送信しました")
+        except Exception as e:
+            logger.error("認証が必要メッセージの送信に失敗しました", error=str(e))
 
     def deauthenticate_user(self, user_id: str) -> bool:
         """ユーザーの認証を取り消す"""
