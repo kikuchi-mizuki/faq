@@ -43,48 +43,19 @@ class AuthService:
             return True  # 認証が無効な場合は常に認証済み
         
         try:
-            # メモリ内の認証情報をチェック
+            # メモリ内の認証情報のみをチェック（SessionService依存を完全に除去）
             if user_id in self.authenticated_users:
-                return True
+                auth_info = self.authenticated_users[user_id]
+                
+                # 認証情報の有効性をチェック
+                if auth_info.get('store_code') and auth_info.get('staff_id'):
+                    return True
+                else:
+                    # 無効な認証情報は削除
+                    del self.authenticated_users[user_id]
+                    return False
             
-            # セッションから認証状態を確認（フォールバック）
-            from .session_service import SessionService
-            session_service = SessionService()
-            session = session_service.get_session(user_id)
-            
-            if not session:
-                return False
-            
-            # 認証済みフラグの確認
-            if not session.get('authenticated', False):
-                return False
-            
-            # セッションの有効期限確認
-            expires_at = session.get('expires_at')
-            if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
-                logger.info("セッションが期限切れです", user_id=hash_user_id(user_id))
-                return False
-            
-            # 店舗・スタッフ情報の確認
-            store_code = session.get('store_code')
-            staff_id = session.get('staff_id')
-            
-            if not store_code or not staff_id:
-                return False
-            
-            # スタッフの現在のステータス確認
-            from .staff_service import StaffService
-            staff_service = StaffService()
-            staff = staff_service.get_staff(store_code, staff_id)
-            
-            if not staff or staff['status'] != 'active':
-                logger.info("スタッフのステータスが無効です", 
-                           user_id=hash_user_id(user_id),
-                           store_code=store_code,
-                           staff_id=staff_id)
-                return False
-            
-            return True
+            return False
             
         except Exception as e:
             logger.error("認証チェック中にエラーが発生しました", 
