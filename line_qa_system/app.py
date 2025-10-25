@@ -290,8 +290,8 @@ def process_text_message(event: Dict[str, Any], start_time: float):
         
         # 認証チェック（認証が有効な場合）
         if Config.AUTH_ENABLED:
-            from .new_auth_flow import NewAuthFlow
-            auth_flow = NewAuthFlow()
+            from .optimized_auth_flow import OptimizedAuthFlow
+            auth_flow = OptimizedAuthFlow()
             
             # 認証フローの処理
             if auth_flow.process_auth_flow(event):
@@ -662,9 +662,9 @@ def deauthenticate_user():
 def get_authenticated_users():
     """認証済みユーザー一覧を取得"""
     try:
-        from .new_auth_flow import NewAuthFlow
+        from .optimized_auth_flow import OptimizedAuthFlow
         
-        auth_flow = NewAuthFlow()
+        auth_flow = OptimizedAuthFlow()
         stats = auth_flow.get_stats()
         
         # 認証済みユーザーの詳細情報を取得
@@ -683,11 +683,74 @@ def get_authenticated_users():
             "status": "success",
             "total_authenticated": stats['total_authenticated'],
             "authenticated_users": authenticated_users,
+            "cache_valid": stats.get('cache_valid', False),
+            "last_cache_update": stats.get('last_cache_update', 0),
             "last_updated": stats['last_updated']
         })
         
     except Exception as e:
         logger.error("認証済みユーザー一覧の取得に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/force-cache-update", methods=["POST"])
+# @require_admin  # 一時的に無効化
+def force_cache_update():
+    """キャッシュを強制更新"""
+    try:
+        from .optimized_auth_flow import OptimizedAuthFlow
+        
+        auth_flow = OptimizedAuthFlow()
+        auth_flow.force_cache_update()
+        
+        logger.info("管理者によるキャッシュ強制更新が完了しました")
+        return jsonify({
+            "status": "success",
+            "message": "キャッシュを強制更新しました",
+            "cache_valid": auth_flow._is_cache_valid(),
+            "last_cache_update": auth_flow.last_cache_update
+        })
+        
+    except Exception as e:
+        logger.error("キャッシュ強制更新に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/deauthenticate", methods=["POST"])
+# @require_admin  # 一時的に無効化
+def deauthenticate_user():
+    """ユーザーの認証を取り消す"""
+    try:
+        from .optimized_auth_flow import OptimizedAuthFlow
+        
+        data = request.get_json()
+        if not data or 'user_id' not in data:
+            return jsonify({
+                "status": "error", 
+                "message": "user_idが必要です"
+            }), 400
+        
+        user_id = data['user_id']
+        auth_flow = OptimizedAuthFlow()
+        
+        # 認証を取り消し
+        success = auth_flow.deauthenticate_user(user_id)
+        
+        if success:
+            logger.info("管理者による認証取り消しが完了しました", 
+                       user_id=hash_user_id(user_id))
+            return jsonify({
+                "status": "success",
+                "message": f"ユーザー {hash_user_id(user_id)} の認証を取り消しました"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"ユーザー {hash_user_id(user_id)} の認証取り消しに失敗しました"
+            }), 400
+            
+    except Exception as e:
+        logger.error("認証取り消しに失敗しました", error=str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
