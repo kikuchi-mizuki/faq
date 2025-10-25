@@ -60,21 +60,41 @@ class SimpleAuthFlow:
                 # 既に認証済み
                 return False  # 通常のBot処理に進む
             
+            # 認証フローの状態を取得
+            current_state = self.auth_service.get_auth_state(user_id)
+            
             # 認証フローの処理
             if message_text.strip().lower() in ['認証', 'auth', 'ログイン', 'login']:
                 # 認証開始
                 self.send_staff_verification_message(reply_token)
+                self.auth_service.set_auth_state(user_id, 'store_code_input_pending')
                 return True
-            elif message_text.strip().startswith('店舗コード:'):
+            elif message_text.strip().startswith('店舗コード:') or message_text.strip().startswith('STORE'):
                 # 店舗コード入力
-                return self.process_store_code_input(user_id, message_text, reply_token)
-            elif message_text.strip().startswith('社員番号:'):
+                if current_state == 'store_code_input_pending' or current_state == 'not_started':
+                    if message_text.strip().startswith('STORE'):
+                        # 店舗コードのみの入力（STORE004など）
+                        store_code = message_text.strip()
+                        return self.process_store_code_input(user_id, f"店舗コード:{store_code}", reply_token)
+                    else:
+                        return self.process_store_code_input(user_id, message_text, reply_token)
+                else:
+                    # 状態が合わない場合は認証をリセット
+                    self.send_auth_required_message(reply_token)
+                    return True
+            elif message_text.strip().startswith('社員番号:') or (current_state == 'staff_id_input_pending' and message_text.strip().isdigit()):
                 # 社員番号入力
-                return self.process_staff_id_input(user_id, message_text, reply_token)
-            elif message_text.strip().startswith('STORE'):
-                # 店舗コードのみの入力（STORE004など）
-                store_code = message_text.strip()
-                return self.process_store_code_input(user_id, f"店舗コード:{store_code}", reply_token)
+                if current_state == 'staff_id_input_pending':
+                    if not message_text.strip().startswith('社員番号:'):
+                        # 社員番号のみの入力（004など）
+                        staff_id = message_text.strip()
+                        return self.process_staff_id_input(user_id, f"社員番号:{staff_id}", reply_token)
+                    else:
+                        return self.process_staff_id_input(user_id, message_text, reply_token)
+                else:
+                    # 状態が合わない場合は認証をリセット
+                    self.send_auth_required_message(reply_token)
+                    return True
             else:
                 # 認証が必要
                 self.send_auth_required_message(reply_token)
@@ -124,6 +144,9 @@ class SimpleAuthFlow:
             
             # 店舗コードを一時保存
             self.auth_service.set_temp_store_code(user_id, store_code)
+            
+            # 認証状態を設定
+            self.auth_service.set_auth_state(user_id, 'staff_id_input_pending')
             
             # 社員番号入力を促す
             message = f"店舗「{store['store_name']}」を確認しました。\n\n" \
