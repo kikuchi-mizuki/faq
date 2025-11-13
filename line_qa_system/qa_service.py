@@ -57,7 +57,10 @@ class QAService:
             # 認証情報の作成
             credentials = Credentials.from_service_account_info(
                 service_account_info,
-                scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets.readonly",
+                    "https://www.googleapis.com/auth/spreadsheets"
+                ],
             )
 
             # クライアントの作成
@@ -458,6 +461,58 @@ class QAService:
             successful_matches=self.stats["successful_matches"],
             last_updated=self.last_updated,
         )
+
+    def log_query(
+        self,
+        user_id_hash: str,
+        query: str,
+        result: SearchResponse,
+        store_code: str = "",
+        staff_id: str = ""
+    ):
+        """
+        質問をGoogle Sheetsに記録
+
+        Args:
+            user_id_hash: ハッシュ化されたユーザーID
+            query: ユーザーの質問
+            result: 検索結果
+            store_code: 店舗コード（認証時）
+            staff_id: スタッフID（認証時）
+        """
+        if not Config.QUERY_LOG_ENABLED:
+            return
+
+        try:
+            # ログデータの作成
+            timestamp = datetime.now().isoformat()
+            result_type = "found" if result.is_found else "not_found"
+            matched_qa_id = result.top_result.id if result.top_result else ""
+            response_time_ms = result.search_time_ms
+
+            log_row = [
+                timestamp,
+                user_id_hash,
+                query,
+                result_type,
+                matched_qa_id,
+                response_time_ms,
+                store_code,
+                staff_id
+            ]
+
+            # Google Sheetsに追記
+            try:
+                sheet = self.gc.open_by_key(self.sheet_id).worksheet(Config.QUERY_LOG_SHEET)
+                sheet.append_row(log_row)
+                logger.info("質問をログに記録しました", query=query, result_type=result_type)
+            except gspread.WorksheetNotFound:
+                logger.warning(f"{Config.QUERY_LOG_SHEET}シートが見つかりません。ログ機能を無効にするか、シートを作成してください。")
+            except Exception as e:
+                logger.error("質問ログの記録に失敗しました", error=str(e))
+
+        except Exception as e:
+            logger.error("質問ログ処理中にエラーが発生しました", error=str(e))
 
     def get_qa_item_by_id(self, item_id: int) -> Optional[QAItem]:
         """

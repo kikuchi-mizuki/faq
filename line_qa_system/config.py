@@ -65,6 +65,10 @@ class Config:
     LINE_LOGIN_CHANNEL_SECRET = os.environ.get("LINE_LOGIN_CHANNEL_SECRET", "")
     LINE_LOGIN_REDIRECT_URI = os.environ.get("LINE_LOGIN_REDIRECT_URI", "")
 
+    # クエリログ設定
+    QUERY_LOG_ENABLED = os.environ.get("QUERY_LOG_ENABLED", "true").lower() == "true"
+    QUERY_LOG_SHEET = os.environ.get("QUERY_LOG_SHEET", "query_log")
+
     @classmethod
     def validate(cls) -> List[str]:
         """設定の妥当性を検証し、問題があればエラーメッセージのリストを返す"""

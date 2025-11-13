@@ -5,6 +5,7 @@
 
 import os
 import time
+import json
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import structlog
@@ -16,6 +17,14 @@ from .staff_service import StaffService
 from .utils import hash_user_id
 
 logger = structlog.get_logger(__name__)
+
+# Redisクライアントの初期化
+try:
+    from upstash_redis import Redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    logger.warning("upstash-redisがインストールされていません。メモリベースの認証を使用します。")
 
 
 class OptimizedAuthFlow:
@@ -36,19 +45,39 @@ class OptimizedAuthFlow:
             self.line_client = LineClient()
             self.store_service = StoreService()
             self.staff_service = StaffService()
-            
+
+            # Redis設定の確認
+            redis_url = os.environ.get("REDIS_URL")
+            redis_token = os.environ.get("REDIS_TOKEN")
+
+            # Redisクライアントの初期化
+            self.redis_client = None
+            self.use_redis = False
+
+            if REDIS_AVAILABLE and redis_url and redis_token:
+                try:
+                    self.redis_client = Redis(url=redis_url, token=redis_token)
+                    self.use_redis = True
+                    logger.info("Redis認証ストレージを初期化しました", redis_url=redis_url[:20] + "...")
+                except Exception as e:
+                    logger.error("Redis初期化に失敗しました。メモリベースを使用します。", error=str(e))
+                    self.use_redis = False
+            else:
+                logger.info("Redis設定が見つかりません。メモリベースの認証を使用します。")
+
             # 認証状態の管理（メモリ内）
             self.auth_states = {}  # ユーザーID -> 認証状態
             self.temp_data = {}    # ユーザーID -> 一時データ
-            self.authenticated_users = {}  # ユーザーID -> 認証情報
-            
+            self.authenticated_users = {}  # ユーザーID -> 認証情報（Redisが無効な場合のフォールバック）
+
             # キャッシュ管理
             self.cache_expiry = 300  # 5分間のキャッシュ
             self.last_cache_update = 0
             self.cache_valid = False
-            
+
             self._initialized = True
-            logger.info("最適化認証フローを初期化しました（キャッシュベース）")
+            storage_type = "Redis" if self.use_redis else "Memory"
+            logger.info(f"最適化認証フローを初期化しました（{storage_type}ベース）")
 
     def _is_cache_valid(self) -> bool:
         """キャッシュが有効かチェック"""
@@ -71,6 +100,13 @@ class OptimizedAuthFlow:
             except Exception as e:
                 logger.error("キャッシュの更新に失敗しました", error=str(e))
                 # エラーが発生してもキャッシュは無効化しない
+    
+    def force_cache_update(self):
+        """キャッシュを強制更新"""
+        logger.info("キャッシュを強制更新します...")
+        self.cache_valid = False
+        self._update_cache_if_needed()
+        logger.info("キャッシュの強制更新が完了しました")
 
     def process_auth_flow(self, event: Dict[str, Any]) -> bool:
         """
@@ -90,6 +126,7 @@ class OptimizedAuthFlow:
 
             # 既に認証済みであれば何もしない
             if self.is_authenticated(user_id):
+                logger.debug("ユーザーは既に認証済みです", user_id=hashed_user_id)
                 return False
 
             # キャッシュを更新（必要に応じて）
@@ -111,11 +148,33 @@ class OptimizedAuthFlow:
 
             # 店舗コード入力
             elif current_state == 'store_code_input_pending':
-                return self.handle_store_code_input(user_id, message_text, reply_token)
+                result = self.handle_store_code_input(user_id, message_text, reply_token)
+                logger.info("店舗コード入力処理完了", 
+                           user_id=hashed_user_id, 
+                           result=result,
+                           new_state=self.auth_states.get(user_id, 'not_started'))
+                return result
 
             # 社員番号入力
             elif current_state == 'staff_id_input_pending':
-                return self.handle_staff_id_input(user_id, message_text, reply_token)
+                result = self.handle_staff_id_input(user_id, message_text, reply_token)
+                logger.info("社員番号入力処理完了", 
+                           user_id=hashed_user_id, 
+                           result=result,
+                           new_state=self.auth_states.get(user_id, 'not_started'))
+                
+                # 認証状態が更新された場合は、次のステップを実行
+                if self.auth_states.get(user_id) == 'staff_id_input_completed':
+                    logger.info("社員番号入力完了、認証最終化を実行します", 
+                               user_id=hashed_user_id)
+                    return self.finalize_auth(user_id, reply_token)
+                
+                return result
+            
+            # 社員番号入力完了後の認証処理
+            elif current_state == 'staff_id_input_completed':
+                # 認証完了処理を実行
+                return self.finalize_auth(user_id, reply_token)
 
             # その他の場合は認証が必要
             else:
@@ -207,6 +266,19 @@ class OptimizedAuthFlow:
                 self.line_client.reply_text(reply_token, 
                     f"スタッフ「{staff['staff_name']}」は現在利用できません。\n\n管理者にお問い合わせください。")
                 return True
+            
+            # 認証状態を社員番号入力完了に更新
+            self.auth_states[user_id] = 'staff_id_input_completed'
+            logger.info("社員番号入力完了、認証状態を更新しました", 
+                       user_id=hash_user_id(user_id), 
+                       store_code=store_code, 
+                       staff_id=staff_id,
+                       new_state=self.auth_states.get(user_id))
+            
+            # 一時データに社員番号を保存
+            if user_id not in self.temp_data:
+                self.temp_data[user_id] = {}
+            self.temp_data[user_id]['staff_id'] = staff_id
 
             # 店舗情報を取得
             store = self.store_service.get_store(store_code)
@@ -233,6 +305,14 @@ class OptimizedAuthFlow:
                     "認証の完了処理中にエラーが発生しました。再度お試しください。")
                 return True
             
+            # 認証状態を完了に設定
+            self.auth_states[user_id] = 'authenticated'
+            
+            logger.info("認証状態を完了に設定しました", 
+                       user_id=hash_user_id(user_id), 
+                       final_auth_state=self.auth_states.get(user_id),
+                       is_authenticated=self.is_authenticated(user_id))
+            
             success_message = f"認証が完了しました！\n\n" \
                             f"店舗: {store['store_name']}\n" \
                             f"スタッフ: {staff['staff_name']}\n\n" \
@@ -252,37 +332,101 @@ class OptimizedAuthFlow:
             self.line_client.reply_text(reply_token, 
                 "社員番号の処理中にエラーが発生しました。再度お試しください。")
             return True
+    
+    def finalize_auth(self, user_id: str, reply_token: str) -> bool:
+        """認証を最終化"""
+        try:
+            # 一時データから認証情報を取得
+            temp_data = self.temp_data.get(user_id, {})
+            store_code = temp_data.get('store_code')
+            staff_id = temp_data.get('staff_id')
+            
+            if not store_code or not staff_id:
+                self.line_client.reply_text(reply_token, 
+                    "認証情報が見つかりません。\n\n最初から認証をやり直してください。")
+                return True
+            
+            # スタッフと店舗情報を再取得
+            staff = self.staff_service.get_staff(store_code, staff_id)
+            store = self.store_service.get_store(store_code)
+            
+            if not staff or not store:
+                self.line_client.reply_text(reply_token, 
+                    "認証情報の取得に失敗しました。\n\n最初から認証をやり直してください。")
+                return True
+            
+            # 認証完了処理を実行
+            self.complete_auth(user_id, store_code, staff_id, store, staff)
+            
+            # 認証状態を完了に設定
+            self.auth_states[user_id] = 'authenticated'
+            
+            success_message = f"認証が完了しました！\n\n" \
+                            f"店舗: {store['store_name']}\n" \
+                            f"スタッフ: {staff['staff_name']}\n\n" \
+                            f"Botをご利用いただけます。"
+            
+            self.line_client.reply_text(reply_token, success_message)
+            logger.info("認証が完了しました", 
+                       user_id=hash_user_id(user_id), 
+                       store_code=store_code, 
+                       staff_id=staff_id,
+                       final_auth_state=self.auth_states.get(user_id),
+                       is_authenticated=self.is_authenticated(user_id))
+            return True
+            
+        except Exception as e:
+            logger.error("認証最終化処理に失敗しました", error=str(e))
+            self.line_client.reply_text(reply_token, 
+                "認証の最終化処理中にエラーが発生しました。再度お試しください。")
+            return True
 
     def complete_auth(self, user_id: str, store_code: str, staff_id: str, store: Dict, staff: Dict):
         """認証を完了"""
         try:
             auth_time = datetime.now().isoformat()
-            
-            # 認証情報をメモリに保存
-            self.authenticated_users[user_id] = {
+
+            auth_data = {
                 'store_code': store_code,
                 'staff_id': staff_id,
                 'store_name': store['store_name'],
                 'staff_name': staff['staff_name'],
                 'auth_time': auth_time
             }
-            
+
+            # Redisまたはメモリに認証情報を保存
+            if self.use_redis and self.redis_client:
+                try:
+                    # Redisに保存（30日間有効）
+                    key = f"auth:{user_id}"
+                    ttl = Config.AUTH_SESSION_DAYS * 24 * 60 * 60  # 秒数
+                    self.redis_client.setex(key, ttl, json.dumps(auth_data))
+                    logger.info("Redis に認証情報を保存しました",
+                               user_id=hash_user_id(user_id),
+                               store_code=store_code,
+                               staff_id=staff_id,
+                               ttl_days=Config.AUTH_SESSION_DAYS)
+                except Exception as e:
+                    logger.error("Redisへの保存に失敗しました。メモリに保存します。", error=str(e))
+                    self.authenticated_users[user_id] = auth_data
+            else:
+                # メモリに保存（フォールバック）
+                self.authenticated_users[user_id] = auth_data
+                logger.info("メモリに認証情報を保存しました",
+                           user_id=hash_user_id(user_id),
+                           store_code=store_code,
+                           staff_id=staff_id)
+
             # 認証状態を完了に設定
             self.auth_states[user_id] = 'authenticated'
-            
+
             # 一時データをクリア
             if user_id in self.temp_data:
                 del self.temp_data[user_id]
-            
+
             # スプレッドシートに認証情報を記録（非同期で実行）
             self.update_staff_auth_info_async(store_code, staff_id, user_id, auth_time)
-            
-            logger.info("認証情報を保存しました", 
-                       user_id=hash_user_id(user_id), 
-                       store_code=store_code, 
-                       staff_id=staff_id,
-                       auth_time=auth_time)
-            
+
         except Exception as e:
             logger.error("認証完了処理に失敗しました", error=str(e))
             raise
@@ -317,35 +461,59 @@ class OptimizedAuthFlow:
     def is_authenticated(self, user_id: str) -> bool:
         """ユーザーが認証済みかチェック（ステータスも確認）"""
         try:
-            if user_id not in self.authenticated_users:
-                logger.debug("ユーザーが認証済みユーザーリストに存在しません", 
-                           user_id=hash_user_id(user_id))
+            # Redisまたはメモリから認証情報を取得
+            auth_info = None
+
+            if self.use_redis and self.redis_client:
+                # Redisから取得
+                try:
+                    key = f"auth:{user_id}"
+                    auth_data_json = self.redis_client.get(key)
+                    if auth_data_json:
+                        auth_info = json.loads(auth_data_json)
+                        logger.debug("Redisから認証情報を取得しました",
+                                   user_id=hash_user_id(user_id))
+                    else:
+                        logger.debug("ユーザーがRedisに存在しません",
+                                   user_id=hash_user_id(user_id))
+                        return False
+                except Exception as e:
+                    logger.error("Redisからの取得に失敗しました。メモリを確認します。", error=str(e))
+                    auth_info = self.authenticated_users.get(user_id)
+            else:
+                # メモリから取得
+                auth_info = self.authenticated_users.get(user_id)
+                if not auth_info:
+                    logger.debug("ユーザーが認証済みユーザーリストに存在しません",
+                               user_id=hash_user_id(user_id))
+                    return False
+
+            if not auth_info:
                 return False
-            
+
             # 認証済みユーザーのステータスをチェック
-            auth_info = self.authenticated_users[user_id]
             store_code = auth_info.get('store_code')
             staff_id = auth_info.get('staff_id')
-            
-            logger.debug("認証済みユーザーのステータスをチェック中", 
-                        user_id=hash_user_id(user_id), 
-                        store_code=store_code, 
+
+            logger.debug("認証済みユーザーのステータスをチェック中",
+                        user_id=hash_user_id(user_id),
+                        store_code=store_code,
                         staff_id=staff_id)
-            
+
             if store_code and staff_id:
                 # キャッシュを更新（必要に応じて）
                 self._update_cache_if_needed()
-                
+
                 # スタッフのステータスをチェック
                 staff = self.staff_service.get_staff(store_code, staff_id)
                 if not staff:
-                    logger.warning("スタッフ情報が見つかりません", 
-                                  user_id=hash_user_id(user_id), 
-                                  store_code=store_code, 
+                    logger.warning("スタッフ情報が見つかりません",
+                                  user_id=hash_user_id(user_id),
+                                  store_code=store_code,
                                   staff_id=staff_id)
                     self.deauthenticate_user(user_id)
                     return False
-                
+
                 staff_status = staff.get('status')
                 logger.info("スタッフのステータスを確認", 
                            user_id=hash_user_id(user_id), 
@@ -396,31 +564,53 @@ class OptimizedAuthFlow:
     def deauthenticate_user(self, user_id: str) -> bool:
         """ユーザーの認証を取り消す"""
         try:
+            # Redisまたはメモリから認証情報を取得
+            auth_info = None
+            found = False
+
+            if self.use_redis and self.redis_client:
+                # Redisから取得して削除
+                try:
+                    key = f"auth:{user_id}"
+                    auth_data_json = self.redis_client.get(key)
+                    if auth_data_json:
+                        auth_info = json.loads(auth_data_json)
+                        self.redis_client.delete(key)
+                        found = True
+                        logger.info("Redisから認証情報を削除しました",
+                                   user_id=hash_user_id(user_id))
+                except Exception as e:
+                    logger.error("Redisからの削除に失敗しました", error=str(e))
+
+            # メモリからも削除（フォールバック）
             if user_id in self.authenticated_users:
-                # 認証情報を取得
-                auth_info = self.authenticated_users[user_id]
+                if not auth_info:
+                    auth_info = self.authenticated_users[user_id]
+                del self.authenticated_users[user_id]
+                found = True
+                logger.info("メモリから認証情報を削除しました",
+                           user_id=hash_user_id(user_id))
+
+            if found and auth_info:
                 store_code = auth_info.get('store_code')
                 staff_id = auth_info.get('staff_id')
-                
-                # メモリから認証情報を削除
-                del self.authenticated_users[user_id]
-                
+
                 # 認証状態をリセット
                 self.auth_states[user_id] = 'not_started'
-                
-                logger.info("ユーザーの認証を取り消しました", 
-                           user_id=hash_user_id(user_id), 
-                           store_code=store_code, 
+
+                logger.info("ユーザーの認証を取り消しました",
+                           user_id=hash_user_id(user_id),
+                           store_code=store_code,
                            staff_id=staff_id)
                 return True
             else:
-                logger.warning("認証取り消し対象のユーザーが見つかりません", 
+                logger.warning("認証取り消し対象のユーザーが見つかりません",
                               user_id=hash_user_id(user_id))
                 return False
-                
+
         except Exception as e:
-            logger.error("認証取り消しに失敗しました", 
-                        user_id=hash_user_id(user_id), 
+            logger.error("認証取り消しに失敗しました",
+                        user_id=hash_user_id(user_id),
                         error=str(e))
             return False
 

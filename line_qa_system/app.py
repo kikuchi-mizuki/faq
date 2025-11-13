@@ -416,6 +416,28 @@ def process_text_message(event: Dict[str, Any], start_time: float):
             # フローに該当しない場合は通常のQ&A検索
             result = qa_service.find_answer(message_text)
 
+            # 認証情報の取得（ログ用）
+            store_code = ""
+            staff_id = ""
+            if Config.AUTH_ENABLED:
+                try:
+                    from .optimized_auth_flow import OptimizedAuthFlow
+                    auth_flow = OptimizedAuthFlow()
+                    auth_data = auth_flow.authenticated_users.get(user_id, {})
+                    store_code = auth_data.get('store_code', '')
+                    staff_id = auth_data.get('staff_id', '')
+                except:
+                    pass
+
+            # 質問をログに記録
+            qa_service.log_query(
+                user_id_hash=hashed_user_id,
+                query=message_text,
+                result=result,
+                store_code=store_code,
+                staff_id=staff_id
+            )
+
             # 応答の送信
             if result.is_found and result.top_result is not None:
                 response_text = format_answer(
@@ -583,7 +605,7 @@ def health_check():
 
 
 @app.route("/admin/reload", methods=["POST"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def reload_cache():
     """キャッシュの再読み込み（管理者のみ）"""
     try:
@@ -602,7 +624,7 @@ def reload_cache():
 
 
 @app.route("/admin/stats", methods=["GET"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def get_stats():
     """統計情報の取得（管理者のみ）"""
     try:
@@ -619,7 +641,7 @@ def get_stats():
 
 
 @app.route("/admin/auto-reload/status", methods=["GET"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def get_auto_reload_status():
     """自動リロードの状態確認"""
     try:
@@ -636,7 +658,7 @@ def get_auto_reload_status():
 
 
 @app.route("/admin/authenticated-users", methods=["GET"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def get_authenticated_users():
     """認証済みユーザー一覧を取得"""
     try:
@@ -672,7 +694,7 @@ def get_authenticated_users():
 
 
 @app.route("/admin/force-cache-update", methods=["POST"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def force_cache_update():
     """キャッシュを強制更新"""
     try:
@@ -695,7 +717,7 @@ def force_cache_update():
 
 
 @app.route("/admin/check-all-users-status", methods=["POST"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def check_all_users_status():
     """全認証済みユーザーのステータスを即座にチェック"""
     try:
@@ -725,7 +747,7 @@ def check_all_users_status():
 
 
 @app.route("/admin/deauthenticate", methods=["POST"])
-# @require_admin  # 一時的に無効化
+@require_admin
 def deauthenticate_user():
     """ユーザーの認証を取り消す"""
     try:
