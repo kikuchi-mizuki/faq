@@ -173,21 +173,28 @@ start_auto_reload()
 
 
 def require_admin(f):
-    """管理者権限が必要なエンドポイント用デコレータ"""
+    """管理者権限が必要なエンドポイント用デコレータ（APIキー認証）"""
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        user_id = request.headers.get("X-User-ID")
-        admin_user_ids = app.config.get("ADMIN_USER_IDS", [])
-        
-        # デバッグ用ログ
-        logger.info("管理者権限チェック", user_id=user_id, admin_user_ids=admin_user_ids)
-        
-        if not user_id or user_id not in admin_user_ids:
-            logger.warning("管理者権限がありません", user_id=user_id, admin_user_ids=admin_user_ids)
-            abort(403, description="管理者権限が必要です")
-        
-        logger.info("管理者権限確認完了", user_id=user_id)
+        api_key = request.headers.get("X-API-Key")
+        expected_api_key = app.config.get("ADMIN_API_KEY", "")
+
+        # APIキーが設定されていない場合はエラー
+        if not expected_api_key:
+            logger.error("ADMIN_API_KEYが設定されていません")
+            abort(500, description="サーバー設定エラー: ADMIN_API_KEYが未設定です")
+
+        # APIキーの検証
+        if not api_key:
+            logger.warning("APIキーが提供されていません")
+            abort(401, description="認証が必要です。X-API-Keyヘッダーを含めてください")
+
+        if api_key != expected_api_key:
+            logger.warning("無効なAPIキーが提供されました")
+            abort(403, description="無効なAPIキーです")
+
+        logger.info("管理者認証成功")
         return f(*args, **kwargs)
 
     return decorated_function
@@ -787,6 +794,11 @@ def deauthenticate_user():
 @app.errorhandler(400)
 def bad_request(error):
     return jsonify({"error": "Bad Request", "message": error.description}), 400
+
+
+@app.errorhandler(401)
+def unauthorized(error):
+    return jsonify({"error": "Unauthorized", "message": error.description}), 401
 
 
 @app.errorhandler(403)

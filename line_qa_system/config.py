@@ -31,11 +31,7 @@ class Config:
     CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
 
     # 管理者設定
-    ADMIN_USER_IDS = (
-        os.environ.get("ADMIN_USER_IDS", "").split(",")
-        if os.environ.get("ADMIN_USER_IDS")
-        else []
-    )
+    ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 
     # ログ設定
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
