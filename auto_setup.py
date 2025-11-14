@@ -1,6 +1,6 @@
 """
 Railway起動時の自動セットアップスクリプト
-認証システム用のスプレッドシートを自動作成
+認証システム・ログシステム用のスプレッドシートを自動作成
 """
 
 import os
@@ -34,42 +34,44 @@ logger = structlog.get_logger(__name__)
 
 
 def auto_setup_auth_sheets():
-    """認証システム用のスプレッドシートを自動作成"""
+    """認証システム・ログシステム用のスプレッドシートを自動作成"""
     try:
-        logger.info("認証システム用スプレッドシートの自動作成を開始します")
-        
-        # 環境変数の確認
-        if not os.environ.get('AUTH_ENABLED', '').lower() == 'true':
-            logger.info("認証機能が無効化されているため、スプレッドシート作成をスキップします")
-            return True
-        
+        logger.info("システム用スプレッドシートの自動作成を開始します")
+
         # Google認証情報を取得
         credentials = get_google_credentials()
         if not credentials:
             logger.warning("Google認証情報が取得できません。スプレッドシート作成をスキップします")
             return True
-        
+
         # gspreadクライアントを初期化
         gc = gspread.authorize(credentials)
         logger.info("Google Sheetsクライアントを初期化しました")
-        
+
         # スプレッドシートIDを取得
         sheet_id = os.environ.get('SHEET_ID_QA')
         if not sheet_id:
             logger.warning("SHEET_ID_QA環境変数が設定されていません。スプレッドシート作成をスキップします")
             return True
-        
+
         # スプレッドシートを開く
         spreadsheet = gc.open_by_id(sheet_id)
         logger.info("スプレッドシートを開きました", sheet_id=sheet_id)
-        
-        # 店舗管理シートの作成
-        create_store_management_sheet(spreadsheet)
-        
-        # スタッフ管理シートの作成
-        create_staff_management_sheet(spreadsheet)
-        
-        logger.info("認証システム用スプレッドシートの自動作成が完了しました")
+
+        # 認証機能が有効な場合のみ、認証シートを作成
+        if os.environ.get('AUTH_ENABLED', '').lower() == 'true':
+            # 店舗管理シートの作成
+            create_store_management_sheet(spreadsheet)
+
+            # スタッフ管理シートの作成
+            create_staff_management_sheet(spreadsheet)
+        else:
+            logger.info("認証機能が無効化されているため、認証シートの作成をスキップします")
+
+        # 質問ログシートは常に作成
+        create_query_log_sheet(spreadsheet)
+
+        logger.info("システム用スプレッドシートの自動作成が完了しました")
         return True
         
     except Exception as e:
@@ -80,28 +82,35 @@ def auto_setup_auth_sheets():
 def get_google_credentials():
     """Google認証情報を取得"""
     try:
+        import base64
+
         # 環境変数から認証情報を取得
         service_account_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
         if not service_account_json:
             return None
-        
+
         # JSON文字列をパース
         if service_account_json.startswith('{'):
             # 直接JSON文字列の場合
             credentials_dict = json.loads(service_account_json)
         else:
-            # ファイルパスの場合
-            with open(service_account_json, 'r') as f:
-                credentials_dict = json.load(f)
-        
+            # Base64エンコードされている場合（Railway等）
+            try:
+                decoded = base64.b64decode(service_account_json)
+                credentials_dict = json.loads(decoded)
+            except Exception:
+                # ファイルパスの場合
+                with open(service_account_json, 'r') as f:
+                    credentials_dict = json.load(f)
+
         # 認証情報を作成
         credentials = Credentials.from_service_account_info(
             credentials_dict,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
-        
+
         return credentials
-        
+
     except Exception as e:
         logger.error("Google認証情報の取得に失敗しました", error=str(e))
         return None
@@ -214,6 +223,44 @@ def create_staff_management_sheet(spreadsheet):
         raise
 
 
+def create_query_log_sheet(spreadsheet):
+    """質問ログシートを作成"""
+    try:
+        sheet_name = "query_log"
+        logger.info("質問ログシートを作成します", sheet_name=sheet_name)
+
+        # ヘッダー行のデータ
+        headers = [
+            "timestamp",         # タイムスタンプ
+            "user_id_hash",      # ハッシュ化されたユーザーID
+            "query",             # ユーザーの質問
+            "result_type",       # 結果タイプ (found/not_found)
+            "matched_qa_id",     # マッチしたQ&AのID
+            "response_time_ms",  # 応答時間（ミリ秒）
+            "store_code",        # 店舗コード
+            "staff_id"           # スタッフID
+        ]
+
+        # シートが存在するかチェック
+        try:
+            worksheet = spreadsheet.worksheet(sheet_name)
+            logger.info("質問ログシートは既に存在します", sheet_name=sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            # シートが存在しない場合は作成
+            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="8")
+            logger.info("質問ログシートを作成しました", sheet_name=sheet_name)
+
+        # ヘッダー行を設定
+        worksheet.update('A1:H1', [headers])
+        logger.info("質問ログシートのヘッダーを設定しました")
+
+        logger.info("質問ログシートの作成が完了しました", sheet_name=sheet_name)
+
+    except Exception as e:
+        logger.error("質問ログシートの作成に失敗しました", error=str(e))
+        raise
+
+
 def main():
     """メイン処理"""
     try:
@@ -223,12 +270,17 @@ def main():
         success = auto_setup_auth_sheets()
         
         if success:
-            logger.info("認証システム用スプレッドシートの自動作成が完了しました")
-            print("✅ 認証システム用スプレッドシートの自動作成が完了しました！")
+            logger.info("システム用スプレッドシートの自動作成が完了しました")
+            print("✅ システム用スプレッドシートの自動作成が完了しました！")
             print("📊 作成されたシート:")
-            print("  - store_management (店舗管理)")
-            print("  - staff_management (スタッフ管理)")
-            print("🧪 認証システムが利用可能になりました")
+            auth_enabled = os.environ.get('AUTH_ENABLED', '').lower() == 'true'
+            if auth_enabled:
+                print("  - store_management (店舗管理)")
+                print("  - staff_management (スタッフ管理)")
+            print("  - query_log (質問ログ)")
+            if auth_enabled:
+                print("🧪 認証システムが利用可能になりました")
+            print("📝 質問ログ機能が利用可能になりました")
         else:
             logger.error("スプレッドシートの自動作成に失敗しました")
             print("❌ スプレッドシートの自動作成に失敗しました")
