@@ -274,9 +274,16 @@ class QAService:
                     logger.info("AI判断: 該当するQ&Aなし")
                     return []
 
-                # ID番号をパース
+                # ID番号をパース（柔軟に対応）
                 try:
-                    qa_id = int(ai_response)
+                    # 「ID: 6」「Q&A ID: 6」などの形式に対応
+                    import re
+                    id_match = re.search(r'\d+', ai_response)
+                    if id_match:
+                        qa_id = int(id_match.group())
+                    else:
+                        raise ValueError(f"ID番号が見つかりません: {ai_response}")
+
                     # IDでQ&Aを取得
                     for qa_item in self.qa_items:
                         if qa_item.id == qa_id:
