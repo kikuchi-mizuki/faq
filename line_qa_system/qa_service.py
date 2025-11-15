@@ -282,11 +282,10 @@ class QAService:
                         if qa_item.id == qa_id:
                             # 高スコアで返す（AI判断なので信頼度高い）
                             result = SearchResult(
-                                id=qa_item.id,
-                                question=qa_item.question,
-                                answer=qa_item.answer,
+                                qa_item=qa_item,
                                 score=0.95,  # AI判断なので高スコア
-                                tags=getattr(qa_item, 'tags', ''),
+                                match_type="ai_context",
+                                matched_text=query,
                             )
                             logger.info(f"AI判断でQ&A ID:{qa_id}を選択", question=qa_item.question)
                             return [result]
