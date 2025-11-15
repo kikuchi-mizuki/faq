@@ -152,23 +152,23 @@ class QAService:
                 cached_result.search_time_ms = int((time.time() - start_time) * 1000)
                 return cached_result
 
-            # AIが有効な場合は、AIによる文脈理解で最適な回答を選択
+            # AIが有効な場合は、AIによる文脈理解のみで回答を選択
             ai_boost_used = False
             search_results = []
 
             if self.ai_service and self.ai_service.is_enabled:
-                # AIによる文脈判断を最優先
+                # AIによる文脈判断のみを使用（キーワードマッチングは使用しない）
                 ai_results = self._search_with_ai_context(query)
                 if ai_results:
                     search_results = ai_results
                     ai_boost_used = True
                     logger.info("AI文脈判断で回答を選択しました", query=query)
                 else:
-                    # AIで見つからない場合のみキーワードマッチング
-                    logger.info("AIで回答が見つからず、キーワードマッチングを試行", query=query)
-                    search_results = self._search_qa_items(query)
+                    # AIで見つからない場合は「回答なし」として返す
+                    logger.info("AI判断で該当するQ&Aが見つかりませんでした", query=query)
+                    search_results = []
             else:
-                # AIが無効な場合はキーワードマッチング
+                # AIが無効な場合のみキーワードマッチングを使用
                 logger.info("AIが無効のため、キーワードマッチングを使用", query=query)
                 search_results = self._search_qa_items(query)
 
