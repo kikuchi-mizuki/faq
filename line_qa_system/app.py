@@ -296,28 +296,34 @@ def process_text_message(event: Dict[str, Any], start_time: float):
             return
         
         # 認証チェック（認証が有効な場合）
+        logger.info("認証機能の状態確認", AUTH_ENABLED=Config.AUTH_ENABLED)
+
         if Config.AUTH_ENABLED:
+            logger.info("認証チェックを開始します", user_id=hashed_user_id)
             from .optimized_auth_flow import OptimizedAuthFlow
             auth_flow = OptimizedAuthFlow()
-            
+
             # 認証フローの処理
             if auth_flow.process_auth_flow(event):
+                logger.info("認証フローで処理されました", user_id=hashed_user_id)
                 return  # 認証フローで処理された場合は終了
-            
+
             # 認証済みでない場合は制限メッセージを送信
             try:
                 is_authenticated = auth_flow.is_authenticated(user_id)
-                logger.info("認証チェック結果", 
-                           user_id=hashed_user_id, 
+                logger.info("認証チェック結果",
+                           user_id=hashed_user_id,
                            is_authenticated=is_authenticated)
-                
+
                 if not is_authenticated:
                     auth_flow.send_auth_required_message(reply_token)
-                    logger.info("未認証ユーザーからのアクセス", user_id=hashed_user_id)
+                    logger.info("未認証ユーザーをブロックしました", user_id=hashed_user_id)
                     return
+                else:
+                    logger.info("認証済みユーザーを許可しました", user_id=hashed_user_id)
             except Exception as e:
-                logger.error("認証チェック中にエラーが発生しました", 
-                           user_id=hashed_user_id, 
+                logger.error("認証チェック中にエラーが発生しました",
+                           user_id=hashed_user_id,
                            error=str(e))
                 # エラーが発生した場合は安全のため認証が必要メッセージを送信
                 try:
@@ -325,6 +331,8 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                 except:
                     pass
                 return
+        else:
+            logger.info("認証機能が無効です。誰でもアクセスできます", user_id=hashed_user_id)
         # キャンセルコマンドのチェック
         if message_text.strip().lower() in ["キャンセル", "cancel", "やめる", "終了"]:
             if flow_service.is_in_flow(user_id):
