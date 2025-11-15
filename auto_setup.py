@@ -55,7 +55,7 @@ def auto_setup_auth_sheets():
             return True
 
         # スプレッドシートを開く
-        spreadsheet = gc.open_by_id(sheet_id)
+        spreadsheet = gc.open_by_key(sheet_id)
         logger.info("スプレッドシートを開きました", sheet_id=sheet_id)
 
         # 認証機能が有効な場合のみ、認証シートを作成
