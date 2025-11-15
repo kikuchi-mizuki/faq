@@ -152,17 +152,25 @@ class QAService:
                 cached_result.search_time_ms = int((time.time() - start_time) * 1000)
                 return cached_result
 
-            # 検索実行
-            search_results = self._search_qa_items(query)
+            # AIが有効な場合は、AIによる文脈理解で最適な回答を選択
             ai_boost_used = False
-            
-            # 結果が見つからない場合、AI文脈判断を試行
-            if (not search_results or len(search_results) == 0) and self.ai_service and self.ai_service.is_enabled:
+            search_results = []
+
+            if self.ai_service and self.ai_service.is_enabled:
+                # AIによる文脈判断を最優先
                 ai_results = self._search_with_ai_context(query)
                 if ai_results:
                     search_results = ai_results
                     ai_boost_used = True
-                    logger.info("AI文脈判断で回答候補を取得しました", query=query)
+                    logger.info("AI文脈判断で回答を選択しました", query=query)
+                else:
+                    # AIで見つからない場合のみキーワードマッチング
+                    logger.info("AIで回答が見つからず、キーワードマッチングを試行", query=query)
+                    search_results = self._search_qa_items(query)
+            else:
+                # AIが無効な場合はキーワードマッチング
+                logger.info("AIが無効のため、キーワードマッチングを使用", query=query)
+                search_results = self._search_qa_items(query)
 
             # 結果の構築
             is_found = False
@@ -224,60 +232,85 @@ class QAService:
         try:
             if not self.ai_service or not self.ai_service.is_enabled:
                 return []
-            
-            # 既存のQ&A内容を取得
+
+            # 既存のQ&A内容を取得（ID付き）
             qa_contents = self._get_qa_contents_for_ai()
-            
+
             # AIに文脈判断を依頼
             context_prompt = f"""
 あなたは動画制作会社のカスタマーサポートAIです。
-ユーザーの質問を分析して、最も適切なQ&Aを選択してください。
+ユーザーの質問の意図を深く理解し、最も適切なQ&Aを選択してください。
 
-【既存のQ&A内容（参考）】
+【既存のQ&A一覧】
 {qa_contents}
 
 【ユーザーの質問】
 {query}
 
-【判断基準（柔軟な対応）】
-- ユーザーの意図を理解して、最も適切なQ&Aを選択
-- 似たような意味の表現でも正しく判断
-- 例：「修正について聞きたい」→ 修正に関するQ&A
-- 例：「料金が知りたい」→ 料金に関するQ&A
-- 例：「制作を依頼したい」→ 制作に関するQ&A
+【重要な判断基準】
+1. 質問の**本質的な意図**を理解する
+   - 「ヒアリング項目は？」→ ユーザーは必要な情報を知りたい
+   - 「制作フローは？」→ ユーザーは制作の流れを知りたい
+2. キーワードではなく**文脈と意味**で判断
+3. 最も関連性が高いQ&AのIDを選択
+4. 該当するQ&Aがない場合は「NONE」と回答
 
-最も適切なQ&Aの質問文を1つだけ回答してください。
-質問文のみを回答し、説明は不要です。
+【例】
+- 「顧客からヒアリングする項目は？」→ ヒアリング項目に関するQ&AのID
+- 「制作の流れを教えて」→ 制作フローに関するQ&AのID
+- 「全く関係ない質問」→ NONE
+
+回答は該当するQ&AのID番号のみ（例: 6）、または「NONE」。説明不要。
 """
-            
+
             # AI回答を生成
             response = self.ai_service.model.generate_content(context_prompt)
             if response and response.text:
-                ai_question = response.text.strip()
-                logger.info(f"AI文脈判断結果: '{query}' -> '{ai_question}'")
-                
-                # 判断された質問で検索
-                ai_results = self._search_qa_items(ai_question)
-                if ai_results:
-                    logger.info(f"AI判断された質問で回答を見つけました: '{ai_question}'")
-                    return ai_results
-                else:
-                    logger.warning(f"AI判断された質問で回答が見つかりませんでした: '{ai_question}'")
+                ai_response = response.text.strip()
+                logger.info(f"AI文脈判断結果: '{query}' -> '{ai_response}'")
+
+                # NONEの場合は該当なし
+                if ai_response.upper() == "NONE":
+                    logger.info("AI判断: 該当するQ&Aなし")
+                    return []
+
+                # ID番号をパース
+                try:
+                    qa_id = int(ai_response)
+                    # IDでQ&Aを取得
+                    for qa_item in self.qa_items:
+                        if qa_item.id == qa_id:
+                            # 高スコアで返す（AI判断なので信頼度高い）
+                            result = SearchResult(
+                                id=qa_item.id,
+                                question=qa_item.question,
+                                answer=qa_item.answer,
+                                score=0.95,  # AI判断なので高スコア
+                                tags=getattr(qa_item, 'tags', ''),
+                            )
+                            logger.info(f"AI判断でQ&A ID:{qa_id}を選択", question=qa_item.question)
+                            return [result]
+
+                    logger.warning(f"AI判断されたID {qa_id} が見つかりません")
+                except ValueError:
+                    logger.warning(f"AI判断結果がID番号ではありません: '{ai_response}'")
             else:
                 logger.warning("AI文脈判断の回答が空です")
-                
+
         except Exception as e:
             logger.error("AI文脈判断中にエラーが発生しました", error=str(e))
-        
+
         return []
 
     def _get_qa_contents_for_ai(self) -> str:
-        """AI判断用のQ&A内容を取得"""
+        """AI判断用のQ&A内容を取得（ID付き）"""
         try:
             qa_contents = []
             for qa in self.qa_items:
-                qa_contents.append(f"- Q: {qa.question}\n  A: {qa.answer[:100]}...")
-            
+                # ID、質問、回答の一部を含める
+                answer_preview = qa.answer[:150] + "..." if len(qa.answer) > 150 else qa.answer
+                qa_contents.append(f"ID: {qa.id}\nQ: {qa.question}\nA: {answer_preview}\n")
+
             return "\n".join(qa_contents) if qa_contents else "Q&A内容がありません"
         except Exception as e:
             logger.error("Q&A内容の取得に失敗しました", error=str(e))
