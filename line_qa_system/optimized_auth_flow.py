@@ -514,6 +514,17 @@ class OptimizedAuthFlow:
                     self.deauthenticate_user(user_id)
                     return False
 
+                # LINE IDが一致するかチェック
+                staff_line_user_id = staff.get('line_user_id')
+                if staff_line_user_id != user_id:
+                    logger.warning("LINE IDが一致しません。認証を取り消します",
+                                  user_id=hash_user_id(user_id),
+                                  store_code=store_code,
+                                  staff_id=staff_id,
+                                  expected_line_id=hash_user_id(staff_line_user_id) if staff_line_user_id else None)
+                    self.deauthenticate_user(user_id)
+                    return False
+
                 staff_status = staff.get('status')
                 logger.info("スタッフのステータスを確認", 
                            user_id=hash_user_id(user_id), 
