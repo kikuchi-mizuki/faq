@@ -71,11 +71,13 @@ document_collector = None
 def initialize_services():
     """サービスの初期化（遅延初期化）"""
     global qa_service, line_client, session_service, flow_service, rag_service, document_collector
-    
+
     if qa_service is not None:
+        print("✅ サービスは既に初期化済みです")
         return  # 既に初期化済み
-    
+
     try:
+        print("🚀 サービスの初期化を開始します...")
         logger.info("サービスの初期化を開始します")
         
         # AIServiceの初期化（最優先で行い、他サービスへ注入）
@@ -121,9 +123,14 @@ def initialize_services():
             except Exception as e:
                 logger.error("DocumentCollectorの初期化に失敗しました", error=str(e))
         
+        print("✅ 全てのサービスの初期化が完了しました")
         logger.info("全てのサービスの初期化が完了しました")
-        
+
     except Exception as e:
+        import traceback
+        print(f"❌❌❌ サービスの初期化中にエラーが発生しました: {e}")
+        print("=== エラーの詳細（Traceback） ===")
+        print(traceback.format_exc())
         logger.error("サービスの初期化中にエラーが発生しました", error=str(e), exc_info=True)
         # エラーが発生してもアプリケーションは起動する
         logger.warning("一部のサービスが初期化できませんでした。基本機能のみ利用可能です。")
