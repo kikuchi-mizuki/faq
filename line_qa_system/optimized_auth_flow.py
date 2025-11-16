@@ -150,8 +150,8 @@ class OptimizedAuthFlow:
             # 店舗コード入力
             elif current_state == 'store_code_input_pending':
                 result = self.handle_store_code_input(user_id, message_text, reply_token)
-                logger.info("店舗コード入力処理完了", 
-                           user_id=hashed_user_id, 
+                logger.info("店舗コード入力処理完了",
+                           user_id=hashed_user_id,
                            result=result,
                            new_state=self.auth_states.get(user_id, 'not_started'))
                 return result
@@ -159,26 +159,32 @@ class OptimizedAuthFlow:
             # 社員番号入力
             elif current_state == 'staff_id_input_pending':
                 result = self.handle_staff_id_input(user_id, message_text, reply_token)
-                logger.info("社員番号入力処理完了", 
-                           user_id=hashed_user_id, 
+                logger.info("社員番号入力処理完了",
+                           user_id=hashed_user_id,
                            result=result,
                            new_state=self.auth_states.get(user_id, 'not_started'))
-                
+
                 # 認証状態が更新された場合は、次のステップを実行
                 if self.auth_states.get(user_id) == 'staff_id_input_completed':
-                    logger.info("社員番号入力完了、認証最終化を実行します", 
+                    logger.info("社員番号入力完了、認証最終化を実行します",
                                user_id=hashed_user_id)
                     return self.finalize_auth(user_id, reply_token)
-                
+
                 return result
-            
+
             # 社員番号入力完了後の認証処理
             elif current_state == 'staff_id_input_completed':
                 # 認証完了処理を実行
                 return self.finalize_auth(user_id, reply_token)
 
-            # その他の場合は認証が必要
+            # 認証済みユーザーの通常メッセージは認証フローで処理しない
+            elif self.is_authenticated(user_id):
+                logger.debug("認証済みユーザーのメッセージは通常処理へ", user_id=hashed_user_id)
+                return False  # 認証フローで処理せず、通常のQ&A処理に進む
+
+            # その他の場合（未認証）は認証が必要
             else:
+                logger.debug("未認証ユーザーに認証要求メッセージを送信", user_id=hashed_user_id)
                 self.send_auth_required_message(reply_token)
                 return True
 
