@@ -124,26 +124,26 @@ class OptimizedAuthFlow:
             if not Config.AUTH_ENABLED:
                 return False
 
-            # 既に認証済みであれば案内メッセージを送信
-            if self.is_authenticated(user_id):
-                logger.debug("ユーザーは既に認証済みです", user_id=hashed_user_id)
-                self.line_client.reply_text(reply_token, "既に認証済みです😊\n\n何でもご質問ください！")
-                return True
-
             # キャッシュを更新（必要に応じて）
             self._update_cache_if_needed()
 
             # 現在の認証状態を取得
             current_state = self.auth_states.get(user_id, 'not_started')
-            
-            logger.info("最適化認証フロー処理中", 
-                        user_id=hashed_user_id, 
-                        current_state=current_state, 
+
+            logger.info("最適化認証フロー処理中",
+                        user_id=hashed_user_id,
+                        current_state=current_state,
                         message_text=message_text,
                         cache_valid=self._is_cache_valid())
 
-            # 認証開始
+            # 認証開始（「認証」というキーワードが送信された場合）
             if message_text.strip().lower() in ["認証", "auth", "ログイン", "login"]:
+                # 既に認証済みであれば案内メッセージを送信
+                if self.is_authenticated(user_id):
+                    logger.debug("ユーザーは既に認証済みです", user_id=hashed_user_id)
+                    self.line_client.reply_text(reply_token, "既に認証済みです😊\n\n何でもご質問ください！")
+                    return True
+                # 未認証の場合は認証フローを開始
                 self.start_auth(user_id, reply_token)
                 return True
 
