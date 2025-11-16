@@ -96,13 +96,13 @@ class QAService:
                     else:
                         updated_at = datetime.now()
 
-                    # シートの列名に対応（qa_category → tags）
+                    # シートの列名を正しくマッピング
                     qa_item = QAItem(
-                        id=int(row.get("id", 0)),  # C列のid
+                        id=int(row.get("id", 0)),
                         question=str(row.get("question", "")),
                         keywords=str(row.get("keywords", "")),
-                        synonyms=str(row.get("synonyms", "")),
-                        tags=str(row.get("qa_category", row.get("tags", ""))),  # qa_category → tags
+                        synonyms=str(row.get("synonyms", "")),  # シートにはないがデフォルト値で対応
+                        tags=str(row.get("tags", row.get("qa_category", ""))),  # tags優先、なければqa_category
                         answer=str(row.get("answer", "")),
                         priority=int(row.get("priority", 1)),
                         status=str(row.get("status", "active")),
