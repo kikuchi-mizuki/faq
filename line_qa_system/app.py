@@ -530,25 +530,10 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                         candidate_count=len(result.candidates),
                     )
                 else:
-                        # RAG機能を使用したAI回答生成を試行
-                        if rag_service and rag_service.is_enabled:
-                            try:
-                                rag_response = rag_service.generate_answer(
-                                    query=message_text,
-                                    context=f"ユーザー質問: {message_text}"
-                                )
-                                if rag_response:
-                                    line_client.reply_text(reply_token, rag_response)
-                                    logger.info("RAG機能を使用したAI回答を送信しました", user_id=hashed_user_id)
-                                    return
-                            except Exception as e:
-                                logger.error("RAG機能での回答生成に失敗しました", error=str(e))
-                        
-                        # 最終フォールバック応答
+                        # 該当するQ&Aが見つからない場合は本社スタッフへエスカレーション
                         fallback_text = get_fallback_response()
                         line_client.reply_text(reply_token, fallback_text)
-
-                        logger.info("フォールバック応答を送信しました", user_id=hashed_user_id)
+                        logger.info("該当なし - 本社スタッフへエスカレーション", user_id=hashed_user_id)
 
         # 処理時間の記録
         latency = int((time.time() - start_time) * 1000)
@@ -584,14 +569,7 @@ def format_candidates(candidates: list) -> str:
 
 def get_fallback_response() -> str:
     """フォールバック応答"""
-    return (
-        "すみません。該当する回答が見つかりませんでした。\n\n"
-        "以下のようなキーワードをお試しください：\n"
-        "• 請求書\n"
-        "• 設定\n"
-        "• パスワード\n\n"
-        "お困りの際は、お手数ですが直接お問い合わせください。"
-    )
+    return "こちらの質問は本社スタッフまでお願いします！"
 
 
 @app.route("/healthz", methods=["GET"])
