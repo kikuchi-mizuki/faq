@@ -591,19 +591,27 @@ def get_fallback_response() -> str:
 def health_check():
     """ヘルスチェックエンドポイント"""
     try:
+        print("=== ヘルスチェック開始 ===")
         # サービスが初期化されていない場合は初期化を試行
         if qa_service is None:
+            print("⚠️ サービスが未初期化です。初期化を試行します...")
             logger.info("ヘルスチェック時にサービスを初期化します")
             initialize_services()
+            print(f"✅ 初期化完了: qa_service={qa_service is not None}")
         else:
+            print("✅ サービスは既に初期化済みです")
             logger.info("サービスは既に初期化済みです")
-        
+
         # 基本的な健全性チェック（QAが生きていればOK、他は情報として返す）
+        print(f"🔍 ヘルスチェック実行中: qa_service={qa_service is not None}")
         qa_healthy = qa_service.health_check() if qa_service is not None else False
         flow_loaded = (flow_service is not None and len(flow_service.flows) > 0)
         ai_healthy = (flow_service is not None and flow_service.ai_service.health_check()) if flow_service is not None else False
-        
+
+        print(f"📊 ヘルスチェック結果: qa_healthy={qa_healthy}, flow_loaded={flow_loaded}, ai_healthy={ai_healthy}")
+
         if qa_healthy:
+            print("✅ ヘルスチェック成功")
             return jsonify({
                 "status": "healthy",
                 "timestamp": time.time(),
@@ -613,6 +621,7 @@ def health_check():
                 "ai_service": "ok" if ai_healthy else "disabled"
             })
         else:
+            print("❌ ヘルスチェック失敗: QAサービスが不健全")
             return jsonify({
                 "status": "unhealthy",
                 "qa_service": "error",
@@ -620,9 +629,12 @@ def health_check():
                 "ai_service": "ok" if ai_healthy else "disabled",
                 "timestamp": time.time()
             }), 500
-            
+
     except Exception as e:
-        logger.error("ヘルスチェックに失敗しました", error=str(e))
+        import traceback
+        print(f"❌ ヘルスチェックで例外発生: {e}")
+        print(traceback.format_exc())
+        logger.error("ヘルスチェックに失敗しました", error=str(e), exc_info=True)
         return (
             jsonify({"status": "unhealthy", "error": str(e), "timestamp": time.time()}),
             500,
