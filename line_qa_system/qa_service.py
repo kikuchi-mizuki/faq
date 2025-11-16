@@ -96,12 +96,13 @@ class QAService:
                     else:
                         updated_at = datetime.now()
 
+                    # シートの列名に対応（row_num → id, qa_category → tags）
                     qa_item = QAItem(
-                        id=int(row.get("id", 0)),
+                        id=int(row.get("row_num", row.get("id", 0))),  # row_num または id
                         question=str(row.get("question", "")),
                         keywords=str(row.get("keywords", "")),
                         synonyms=str(row.get("synonyms", "")),
-                        tags=str(row.get("tags", "")),
+                        tags=str(row.get("qa_category", row.get("tags", ""))),  # qa_category または tags
                         answer=str(row.get("answer", "")),
                         priority=int(row.get("priority", 1)),
                         status=str(row.get("status", "active")),
