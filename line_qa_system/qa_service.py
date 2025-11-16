@@ -157,18 +157,22 @@ class QAService:
             search_results = []
 
             if self.ai_service and self.ai_service.is_enabled:
-                # AIによる文脈判断のみを使用（キーワードマッチングは使用しない）
+                # AIによる文脈判断を優先使用
                 ai_results = self._search_with_ai_context(query)
                 if ai_results:
                     search_results = ai_results
                     ai_boost_used = True
                     logger.info("AI文脈判断で回答を選択しました", query=query)
                 else:
-                    # AIで見つからない場合は「回答なし」として返す
-                    logger.info("AI判断で該当するQ&Aが見つかりませんでした", query=query)
-                    search_results = []
+                    # AIで見つからない場合はキーワードマッチングにフォールバック
+                    logger.info("AI判断で該当なし。キーワードマッチングにフォールバックします", query=query)
+                    search_results = self._search_qa_items(query)
+                    if search_results:
+                        logger.info("キーワードマッチングで候補を発見しました",
+                                   query=query,
+                                   count=len(search_results))
             else:
-                # AIが無効な場合のみキーワードマッチングを使用
+                # AIが無効な場合はキーワードマッチングを使用
                 logger.info("AIが無効のため、キーワードマッチングを使用", query=query)
                 search_results = self._search_qa_items(query)
 
@@ -251,14 +255,18 @@ class QAService:
 1. 質問の**本質的な意図**を理解する
    - 「ヒアリング項目は？」→ ユーザーは必要な情報を知りたい
    - 「制作フローは？」→ ユーザーは制作の流れを知りたい
-2. キーワードではなく**文脈と意味**で判断
-3. 最も関連性が高いQ&AのIDを選択
-4. 該当するQ&Aがない場合は「NONE」と回答
+2. **意味的に類似していればマッチさせる**
+   - 「教えて」「出して」「見せて」「知りたい」などは同じ意図
+   - 「価格の一覧表を出して」≒「価格の一覧表を教えてください」→ マッチ
+3. キーワードではなく**文脈と意味**で判断
+4. 最も関連性が高いQ&AのIDを選択
+5. 明らかに業務と無関係な質問のみ「NONE」と回答
 
 【例】
 - 「顧客からヒアリングする項目は？」→ ヒアリング項目に関するQ&AのID
 - 「制作の流れを教えて」→ 制作フローに関するQ&AのID
-- 「全く関係ない質問」→ NONE
+- 「価格表を見せて」+「価格の一覧表を教えてください」のQ&A → そのQ&AのID
+- 「全く関係ない質問（天気、スポーツなど）」→ NONE
 
 回答は該当するQ&AのID番号のみ（例: 6）、または「NONE」。説明不要。
 """
