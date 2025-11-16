@@ -438,11 +438,16 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                 try:
                     from .optimized_auth_flow import OptimizedAuthFlow
                     auth_flow = OptimizedAuthFlow()
-                    auth_data = auth_flow.authenticated_users.get(user_id, {})
-                    store_code = auth_data.get('store_code', '')
-                    staff_id = auth_data.get('staff_id', '')
-                except:
-                    pass
+                    auth_data = auth_flow.get_auth_info(user_id)
+                    if auth_data:
+                        store_code = auth_data.get('store_code', '')
+                        staff_id = auth_data.get('staff_id', '')
+                        logger.debug("認証情報を取得しました",
+                                   user_id=hash_user_id(user_id),
+                                   store_code=store_code,
+                                   staff_id=staff_id)
+                except Exception as e:
+                    logger.error("認証情報の取得に失敗しました", error=str(e))
 
             # 質問をログに記録
             qa_service.log_query(

@@ -559,8 +559,23 @@ class OptimizedAuthFlow:
             return False
 
     def get_auth_info(self, user_id: str) -> Optional[Dict]:
-        """認証情報を取得"""
-        return self.authenticated_users.get(user_id)
+        """認証情報を取得（Redisまたはメモリから）"""
+        try:
+            # Redisを使用している場合はRedisから取得
+            if self.use_redis and self.redis_client:
+                try:
+                    key = f"auth:{user_id}"
+                    auth_data_json = self.redis_client.get(key)
+                    if auth_data_json:
+                        return json.loads(auth_data_json)
+                except Exception as e:
+                    logger.error("Redisからの認証情報取得に失敗しました。メモリを確認します。", error=str(e))
+
+            # メモリから取得
+            return self.authenticated_users.get(user_id)
+        except Exception as e:
+            logger.error("認証情報の取得に失敗しました", error=str(e))
+            return None
 
     def send_auth_required_message(self, reply_token: str):
         """認証が必要な旨を伝えるメッセージを送信"""
