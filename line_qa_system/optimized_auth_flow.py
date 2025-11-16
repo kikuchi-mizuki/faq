@@ -124,10 +124,11 @@ class OptimizedAuthFlow:
             if not Config.AUTH_ENABLED:
                 return False
 
-            # 既に認証済みであれば何もしない
+            # 既に認証済みであれば案内メッセージを送信
             if self.is_authenticated(user_id):
                 logger.debug("ユーザーは既に認証済みです", user_id=hashed_user_id)
-                return False
+                self.line_client.reply_text(reply_token, "既に認証済みです😊\n\n何でもご質問ください！")
+                return True
 
             # キャッシュを更新（必要に応じて）
             self._update_cache_if_needed()
