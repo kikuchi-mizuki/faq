@@ -96,16 +96,27 @@ class QAService:
                     else:
                         updated_at = datetime.now()
 
+                    # 数値フィールドの安全な変換
+                    try:
+                        item_id = int(row.get("id", 0) or 0)
+                    except (ValueError, TypeError):
+                        item_id = 0
+
+                    try:
+                        item_priority = int(row.get("priority", 1) or 1)
+                    except (ValueError, TypeError):
+                        item_priority = 1
+
                     # シートの列名を正しくマッピング
                     qa_item = QAItem(
-                        id=int(row.get("id", 0)),
-                        question=str(row.get("question", "")),
-                        keywords=str(row.get("keywords", "")),
-                        synonyms=str(row.get("synonyms", "")),  # シートにはないがデフォルト値で対応
-                        tags=str(row.get("tags", row.get("qa_category", ""))),  # tags優先、なければqa_category
-                        answer=str(row.get("answer", "")),
-                        priority=int(row.get("priority", 1)),
-                        status=str(row.get("status", "active")),
+                        id=item_id,
+                        question=str(row.get("question", "") or ""),
+                        keywords=str(row.get("keywords", "") or ""),
+                        synonyms=str(row.get("synonyms", "") or ""),  # シートにはないがデフォルト値で対応
+                        tags=str(row.get("tags", "") or row.get("qa_category", "") or ""),  # tags優先、なければqa_category
+                        answer=str(row.get("answer", "") or ""),
+                        priority=item_priority,
+                        status=str(row.get("status", "active") or "active"),
                         updated_at=updated_at,
                     )
 
@@ -114,7 +125,10 @@ class QAService:
                         self.qa_items.append(qa_item)
 
                 except Exception as e:
-                    logger.warning("行の解析に失敗しました", row=row, error=str(e))
+                    logger.error("行の解析に失敗しました",
+                                error=str(e),
+                                error_type=type(e).__name__,
+                                row_data=str(row)[:200])  # 最初の200文字のみ
                     continue
 
             self.last_updated = datetime.now()
