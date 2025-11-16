@@ -145,6 +145,11 @@ def start_auto_reload():
                     # 現在の最終更新時刻を取得（簡易実装）
                     current_time = time.time()
                     
+                    # サービスが初期化されていない場合はスキップ
+                    if qa_service is None or flow_service is None:
+                        logger.info("サービスが初期化されていないため、自動リロードをスキップします")
+                        continue
+
                     # 初回実行時または強制リロード時
                     if last_sheet_update is None:
                         qa_service.reload_cache()
