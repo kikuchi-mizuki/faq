@@ -225,12 +225,15 @@ def callback():
             app.config["LINE_CHANNEL_SECRET"],
         ):
             logger.warning("LINE署名検証に失敗しました")
-            abort(400, description="署名検証に失敗しました")
+            # 署名検証失敗でも200を返す（LINEの要件）
+            return jsonify({"status": "ok"})
 
         # リクエストボディの解析
         body = request.get_json()
         if not body:
-            abort(400, description="リクエストボディが不正です")
+            logger.warning("リクエストボディが不正です")
+            # 不正なボディでも200を返す
+            return jsonify({"status": "ok"})
 
         # イベントの処理
         for event in body.get("events", []):
@@ -243,7 +246,8 @@ def callback():
 
     except Exception as e:
         logger.error("Webhook処理中にエラーが発生しました", error=str(e), exc_info=True)
-        abort(500, description="内部エラーが発生しました")
+        # エラーが発生しても200を返す（LINEの要件）
+        return jsonify({"status": "ok"})
 
 
 def process_postback_message(event: Dict[str, Any], start_time: float):
