@@ -183,17 +183,51 @@ class RAGService:
     def _initialize_full_rag(self):
         """完全RAG機能の初期化"""
         try:
+            # Embeddingモデルの初期化
+            if SENTENCE_TRANSFORMERS_AVAILABLE and NUMPY_AVAILABLE:
+                logger.info(f"Embeddingモデルを読み込んでいます: {self.embedding_model_name}")
+                self.embedding_model = SentenceTransformer(self.embedding_model_name)
+                logger.info("Embeddingモデルの読み込みが完了しました")
+            else:
+                logger.error("sentence-transformersまたはnumpyが利用できません")
+                raise ImportError("sentence-transformersまたはnumpyが利用できません")
+
             # Gemini APIの初期化
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+                # 利用可能なモデルを確認
+                try:
+                    models = genai.list_models()
+                    available_models = [model.name for model in models if 'generateContent' in model.supported_generation_methods]
+                    logger.info(f"RAG利用可能なモデル: {available_models[:5]}")  # 最初の5つのみログ
+
+                    # 利用可能なモデルから選択（2.0を優先）
+                    if 'models/gemini-2.0-flash-001' in available_models:
+                        self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-001')
+                        logger.info("RAG: gemini-2.0-flash-001を使用します")
+                    elif 'models/gemini-flash-latest' in available_models:
+                        self.gemini_model = genai.GenerativeModel('gemini-flash-latest')
+                        logger.info("RAG: gemini-flash-latestを使用します")
+                    elif 'models/gemini-2.5-flash' in available_models:
+                        self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+                        logger.info("RAG: gemini-2.5-flashを使用します")
+                    else:
+                        # フォールバック
+                        self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                        logger.info("RAG: gemini-1.5-flash-latestを使用します（フォールバック）")
+
+                except Exception as model_error:
+                    logger.warning("モデル一覧の取得に失敗しました、フォールバックモデルを使用します", error=str(model_error))
+                    self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
                 logger.info("Gemini APIを初期化しました")
-            
+
             self.is_enabled = True
             logger.info("完全RAG機能の初期化が完了しました")
-            
+
         except Exception as e:
-            logger.error("完全RAG機能の初期化に失敗しました", error=str(e))
+            logger.error("完全RAG機能の初期化に失敗しました", error=str(e), exc_info=True)
             self.is_enabled = False
 
     def create_tables(self):
