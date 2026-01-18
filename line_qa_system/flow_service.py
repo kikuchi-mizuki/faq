@@ -3,6 +3,8 @@
 """
 
 import time
+import base64
+import binascii
 import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -47,11 +49,17 @@ class FlowService:
     def _init_google_sheets(self):
         """Google Sheets APIの初期化"""
         try:
-            # サービスアカウントJSONのデコード
-            import base64
-            service_account_info = json.loads(
-                base64.b64decode(Config.GOOGLE_SERVICE_ACCOUNT_JSON)
-            )
+            # サービスアカウントJSONの処理
+            service_account_json = Config.GOOGLE_SERVICE_ACCOUNT_JSON
+
+            # Base64エンコードされているかチェック
+            try:
+                # Base64デコードを試行
+                decoded = base64.b64decode(service_account_json)
+                service_account_info = json.loads(decoded)
+            except (binascii.Error, ValueError):
+                # Base64デコードに失敗した場合は、生のJSON文字列として処理
+                service_account_info = json.loads(service_account_json)
 
             # 認証情報の作成
             credentials = Credentials.from_service_account_info(
