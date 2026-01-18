@@ -46,15 +46,11 @@ class DocumentCollector:
         """初期化"""
         self.rag_service = rag_service
         self.sheet_id = Config.SHEET_ID_QA
-        
+
         # Google認証情報の取得
         self.credentials = self._get_credentials()
-        self.drive_service = None
-        self.docs_service = None
-        
-        if self.credentials:
-            self.drive_service = build('drive', 'v3', credentials=self.credentials)
-            self.docs_service = build('docs', 'v1', credentials=self.credentials)
+        self._drive_service = None
+        self._docs_service = None
 
     def _get_credentials(self) -> Optional[Credentials]:
         """Google認証情報を取得"""
@@ -100,6 +96,24 @@ class DocumentCollector:
             logger.error("Google認証情報の取得に失敗しました", error=str(e))
             logger.info("RAG機能の文書収集は無効化されます。基本機能のみ利用可能です。")
             return None
+
+    @property
+    def drive_service(self):
+        """Google Drive APIサービス（遅延初期化）"""
+        if self._drive_service is None and self.credentials:
+            logger.info("Google Drive APIサービスを初期化しています...")
+            self._drive_service = build('drive', 'v3', credentials=self.credentials)
+            logger.info("Google Drive APIサービスの初期化が完了しました")
+        return self._drive_service
+
+    @property
+    def docs_service(self):
+        """Google Docs APIサービス（遅延初期化）"""
+        if self._docs_service is None and self.credentials:
+            logger.info("Google Docs APIサービスを初期化しています...")
+            self._docs_service = build('docs', 'v1', credentials=self.credentials)
+            logger.info("Google Docs APIサービスの初期化が完了しました")
+        return self._docs_service
 
     def collect_all_documents(self) -> bool:
         """全ての文書を収集"""
