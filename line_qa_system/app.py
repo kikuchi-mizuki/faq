@@ -628,11 +628,39 @@ def reload_cache():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/admin/rag-status", methods=["GET"])
+@require_admin
+def rag_status():
+    """RAG機能の状態を確認（管理者のみ）"""
+    try:
+        return jsonify({
+            "status": "success",
+            "rag_service_initialized": rag_service is not None,
+            "rag_service_enabled": rag_service.is_enabled if rag_service else False,
+            "document_collector_initialized": document_collector is not None,
+            "gemini_api_key_set": bool(os.getenv('GEMINI_API_KEY')),
+            "database_url_set": bool(os.getenv('DATABASE_URL')),
+            "timestamp": time.time()
+        })
+    except Exception as e:
+        logger.error("RAG状態確認に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
     """Google Driveから文書を収集（管理者のみ）"""
     try:
+        # RAGサービスの状態確認
+        if not rag_service or not rag_service.is_enabled:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスが無効です。GEMINI_API_KEYとDATABASE_URLを設定してください。",
+                "rag_service_initialized": rag_service is not None,
+                "rag_service_enabled": rag_service.is_enabled if rag_service else False
+            }), 500
+
         if not document_collector:
             return jsonify({
                 "status": "error",
@@ -640,6 +668,7 @@ def collect_documents():
             }), 500
 
         # 文書収集を実行
+        logger.info("文書収集を開始します")
         success = document_collector.collect_all_documents()
 
         if success:
@@ -656,7 +685,7 @@ def collect_documents():
             }), 500
 
     except Exception as e:
-        logger.error("文書収集に失敗しました", error=str(e))
+        logger.error("文書収集に失敗しました", error=str(e), exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
