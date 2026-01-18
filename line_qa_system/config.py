@@ -22,6 +22,7 @@ class Config:
     SHEET_ID_QA = os.environ.get("SHEET_ID_QA", "")
 
     # Redis設定
+    REDIS_ENABLED = os.environ.get("REDIS_ENABLED", "false").lower() == "true"
     REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
     REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")

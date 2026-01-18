@@ -17,6 +17,13 @@ class SessionService:
 
     def __init__(self):
         """初期化"""
+        # Redis無効化設定をチェック
+        if not Config.REDIS_ENABLED:
+            logger.info("Redis無効化設定のため、メモリキャッシュモードで起動します")
+            self.redis_client = None
+            self._memory_cache: Dict[str, tuple[Any, float]] = {}
+            return
+
         try:
             # Redisクライアントの初期化
             self.redis_client = redis.Redis(
@@ -28,11 +35,11 @@ class SessionService:
                 socket_connect_timeout=5,
                 socket_timeout=5,
             )
-            
+
             # 接続テスト
             self.redis_client.ping()
             logger.info("Redisに接続しました", host=Config.REDIS_HOST, port=Config.REDIS_PORT)
-            
+
         except Exception as e:
             logger.error("Redisの初期化に失敗しました", error=str(e))
             # Redisが利用できない場合はメモリキャッシュにフォールバック
