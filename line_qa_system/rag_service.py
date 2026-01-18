@@ -101,32 +101,18 @@ class RAGService:
             # Gemini APIのみを使用したRAG機能
             if self.gemini_api_key:
                 genai.configure(api_key=self.gemini_api_key)
-                
-                # 利用可能なモデルを確認
+
+                # モデル一覧の取得をスキップして、直接モデルを使用（高速化）
                 try:
-                    models = genai.list_models()
-                    available_models = [model.name for model in models if 'generateContent' in model.supported_generation_methods]
-                    logger.warning(f"RAG利用可能なモデル: {available_models}")
-                    
-                    # 利用可能なモデルから選択（2.0を優先）
-                    if 'models/gemini-2.0-flash-001' in available_models:
-                        self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-001')
-                        logger.info("RAG: gemini-2.0-flash-001を使用します")
-                    elif 'models/gemini-flash-latest' in available_models:
-                        self.gemini_model = genai.GenerativeModel('gemini-flash-latest')
-                        logger.info("RAG: gemini-flash-latestを使用します")
-                    elif 'models/gemini-2.5-flash' in available_models:
-                        self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-                        logger.info("RAG: gemini-2.5-flashを使用します")
-                    else:
-                        logger.warning("RAG: 利用可能なGeminiモデルが見つかりません")
-                        return
-                        
+                    # gemini-2.0-flash-001を直接使用（モデル一覧取得は遅いのでスキップ）
+                    self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                    logger.info("RAG: gemini-2.0-flash-expを使用します")
+
                 except Exception as model_error:
-                    logger.error("RAG: モデル一覧の取得に失敗しました", error=str(model_error))
-                    # フォールバック: 直接モデルを試す
-                    self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-001')
-                    logger.info("RAG: フォールバック: gemini-2.0-flash-001を試します")
+                    logger.error("RAG: モデルの初期化に失敗しました", error=str(model_error))
+                    self.gemini_model = None
+                    logger.warning("RAG: Geminiモデルの初期化に失敗しました")
+                    return
                 
                 logger.warning("代替RAG機能（Geminiのみ）を初期化しました")
                 self.is_enabled = True
@@ -142,28 +128,23 @@ class RAGService:
     def _try_database_connection(self):
         """データベース接続を試行（成功/失敗を返す）"""
         try:
-            self.db_connection = psycopg2.connect(self.database_url)
+            # タイムアウト設定付きで接続（5秒）
+            self.db_connection = psycopg2.connect(
+                self.database_url,
+                connect_timeout=5
+            )
             logger.info("データベース接続を確立しました")
             
-            # pgvector拡張の確認
+            # pgvector拡張の確認（簡略版）
             with self.db_connection.cursor() as cursor:
-                # 利用可能な拡張機能を全て確認
-                cursor.execute("SELECT name FROM pg_available_extensions ORDER BY name;")
-                all_extensions = cursor.fetchall()
-                logger.info(f"利用可能な拡張機能: {[ext[0] for ext in all_extensions]}")
-                
-                # pgvector拡張機能の確認
+                # pgvector拡張機能の確認（詳細なチェックはスキップして高速化）
                 cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
                 available_extensions = cursor.fetchall()
-                logger.info(f"pgvector拡張機能: {available_extensions}")
-                
+
                 if not available_extensions:
-                    logger.warning("pgvector拡張機能が利用できません")
-                    logger.warning("Railway PostgreSQLではpgvectorが利用できない可能性があります")
-                    logger.warning("データベース接続は成功したが、pgvectorが利用できないためFalseを返します")
-                    logger.warning("=== RAGService初期化デバッグ: pgvector利用不可 ===")
+                    logger.warning("pgvector拡張機能が利用できません。代替RAGモードに切り替えます。")
                     return False
-                
+
                 # pgvector拡張機能の有効化を試行
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
                 self.db_connection.commit()
