@@ -650,7 +650,7 @@ def rag_status():
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
-    """Google Driveから文書を収集（管理者のみ）"""
+    """Google Driveから文書を収集（管理者のみ）- バックグラウンド実行"""
     try:
         # RAGサービスの状態確認
         if not rag_service or not rag_service.is_enabled:
@@ -667,25 +667,33 @@ def collect_documents():
                 "message": "DocumentCollectorが初期化されていません。RAG機能が無効の可能性があります。"
             }), 500
 
-        # 文書収集を実行
-        logger.info("文書収集を開始します")
-        success = document_collector.collect_all_documents()
+        # バックグラウンドで文書収集を実行
+        def collect_in_background():
+            try:
+                logger.info("バックグラウンドで文書収集を開始します")
+                success = document_collector.collect_all_documents()
+                if success:
+                    logger.info("管理者による文書収集が完了しました")
+                else:
+                    logger.error("文書収集中にエラーが発生しました")
+            except Exception as e:
+                logger.error("バックグラウンド文書収集に失敗しました", error=str(e), exc_info=True)
 
-        if success:
-            logger.info("管理者による文書収集が完了しました")
-            return jsonify({
-                "status": "success",
-                "message": "Google DriveからPDF/Excel/テキストファイルを収集し、RAGに追加しました",
-                "timestamp": time.time()
-            })
-        else:
-            return jsonify({
-                "status": "error",
-                "message": "文書収集中にエラーが発生しました"
-            }), 500
+        # スレッドで非同期実行
+        collection_thread = threading.Thread(target=collect_in_background, daemon=True)
+        collection_thread.start()
+
+        logger.info("文書収集をバックグラウンドで開始しました")
+
+        # すぐに応答を返す
+        return jsonify({
+            "status": "success",
+            "message": "文書収集をバックグラウンドで開始しました。ログで進捗を確認してください。",
+            "timestamp": time.time()
+        })
 
     except Exception as e:
-        logger.error("文書収集に失敗しました", error=str(e), exc_info=True)
+        logger.error("文書収集の開始に失敗しました", error=str(e), exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
