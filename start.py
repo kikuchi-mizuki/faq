@@ -47,12 +47,18 @@ if __name__ == '__main__':
         os.environ['FLASK_ENV'] = 'production'
         
         print('=== Flaskアプリケーションのインポート ===')
-        from line_qa_system.app import app
-        
+        from line_qa_system.app import app, initialize_services
+
         print(f'✅ アプリ名: {app.name}')
         print(f'✅ デバッグモード: {app.debug}')
+
+        # サービスの初期化
+        print('🚀 サービスを初期化しています...')
+        initialize_services()
+        print('✅ サービス初期化完了')
+
         print(f'=== Flask起動開始 (ポート: {port}) ===')
-        
+
         # Flaskアプリケーションを直接起動
         app.run(
             host='0.0.0.0',
