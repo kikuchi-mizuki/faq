@@ -670,18 +670,26 @@ def collect_documents():
         # バックグラウンドで文書収集を実行
         def collect_in_background():
             try:
+                print("📝 [DEBUG] バックグラウンドスレッド開始")
                 logger.info("バックグラウンドで文書収集を開始します")
+                print("📝 [DEBUG] document_collector.collect_all_documents()を呼び出します")
                 success = document_collector.collect_all_documents()
+                print(f"📝 [DEBUG] 文書収集結果: {success}")
                 if success:
                     logger.info("管理者による文書収集が完了しました")
                 else:
                     logger.error("文書収集中にエラーが発生しました")
             except Exception as e:
+                print(f"❌ [DEBUG] バックグラウンドエラー: {e}")
+                import traceback
+                traceback.print_exc()
                 logger.error("バックグラウンド文書収集に失敗しました", error=str(e), exc_info=True)
 
         # スレッドで非同期実行
+        print("🚀 [DEBUG] バックグラウンドスレッドを起動します")
         collection_thread = threading.Thread(target=collect_in_background, daemon=True)
         collection_thread.start()
+        print("✅ [DEBUG] バックグラウンドスレッドを起動しました")
 
         logger.info("文書収集をバックグラウンドで開始しました")
 
