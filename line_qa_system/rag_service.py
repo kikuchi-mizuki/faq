@@ -282,7 +282,12 @@ class RAGService:
         if not self.is_enabled:
             logger.warning("RAGServiceが無効です")
             return False
-        
+
+        # 代替RAG機能（Geminiのみ）の場合、文書追加は利用できない
+        if not self.db_connection or not self.embedding_model:
+            logger.info("代替RAG機能では文書追加は利用できません（ベクトルDB未接続）")
+            return False
+
         try:
             # 文書をチャンクに分割
             chunks = self._split_text(content)
