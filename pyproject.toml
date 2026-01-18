@@ -19,6 +19,10 @@ cachetools = "^5.3.0"
 structlog = "^23.2.0"
 redis = "^5.0.0"
 google-generativeai = "^0.3.0"
+pypdf2 = "^3.0.0"
+openpyxl = "^3.1.0"
+google-api-python-client = "^2.100.0"
+psycopg2-binary = "^2.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

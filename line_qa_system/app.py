@@ -490,10 +490,33 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                     score=getattr(result.top_result, "score", None),
                 )
             else:
-                # 明確なマッチが見つからない場合は本社スタッフへエスカレーション
-                fallback_text = get_fallback_response()
-                line_client.reply_text(reply_token, fallback_text)
-                logger.info("該当なし - 本社スタッフへエスカレーション", user_id=hashed_user_id)
+                # 明確なマッチが見つからない場合、RAGで回答を試行
+                rag_answer = None
+                if rag_service and rag_service.is_enabled:
+                    try:
+                        # RAGで類似文書を検索
+                        similar_docs = rag_service.search_similar_documents(message_text, limit=3)
+
+                        if similar_docs:
+                            # 類似文書が見つかった場合、コンテキストを構築してAI回答生成
+                            context = rag_service._build_context(similar_docs)
+                            rag_answer = rag_service.generate_answer(message_text, context)
+                            logger.info("RAGで回答を生成しました", user_id=hashed_user_id, doc_count=len(similar_docs))
+                        else:
+                            logger.info("RAGで類似文書が見つかりませんでした", user_id=hashed_user_id)
+                    except Exception as e:
+                        logger.error("RAG回答生成中にエラーが発生しました", user_id=hashed_user_id, error=str(e))
+
+                # RAGで回答が得られた場合はそれを返す、そうでなければエスカレーション
+                if rag_answer:
+                    response_text = f"{rag_answer}\n\n※この回答はアップロードされた資料から生成されました。"
+                    line_client.reply_text(reply_token, response_text)
+                    logger.info("RAG回答を送信しました", user_id=hashed_user_id)
+                else:
+                    # RAGでも回答が得られない場合は本社スタッフへエスカレーション
+                    fallback_text = get_fallback_response()
+                    line_client.reply_text(reply_token, fallback_text)
+                    logger.info("該当なし - 本社スタッフへエスカレーション", user_id=hashed_user_id)
 
         # 処理時間の記録
         latency = int((time.time() - start_time) * 1000)
@@ -595,13 +618,45 @@ def reload_cache():
         flow_service.reload_flows()
         logger.info("手動リロードが完了しました")
         return jsonify({
-            "status": "success", 
+            "status": "success",
             "message": "キャッシュを再読み込みしました（Q&A + フロー + 資料）",
             "timestamp": time.time(),
             "auto_reload_active": True
         })
     except Exception as e:
         logger.error("キャッシュの再読み込みに失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/collect-documents", methods=["POST"])
+@require_admin
+def collect_documents():
+    """Google Driveから文書を収集（管理者のみ）"""
+    try:
+        if not document_collector:
+            return jsonify({
+                "status": "error",
+                "message": "DocumentCollectorが初期化されていません。RAG機能が無効の可能性があります。"
+            }), 500
+
+        # 文書収集を実行
+        success = document_collector.collect_all_documents()
+
+        if success:
+            logger.info("管理者による文書収集が完了しました")
+            return jsonify({
+                "status": "success",
+                "message": "Google DriveからPDF/Excel/テキストファイルを収集し、RAGに追加しました",
+                "timestamp": time.time()
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "文書収集中にエラーが発生しました"
+            }), 500
+
+    except Exception as e:
+        logger.error("文書収集に失敗しました", error=str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

@@ -6,6 +6,7 @@ Google Sheets、Google Docs、Google Driveから文書を収集
 import os
 import json
 import time
+import io
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import structlog
@@ -14,6 +15,23 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+# PDF/Excel解析用ライブラリ（条件付きインポート）
+try:
+    from PyPDF2 import PdfReader
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    logger = structlog.get_logger(__name__)
+    logger.warning("PyPDF2がインストールされていません。PDF解析機能が無効です。")
+
+try:
+    import openpyxl
+    EXCEL_SUPPORT = True
+except ImportError:
+    EXCEL_SUPPORT = False
+    logger = structlog.get_logger(__name__)
+    logger.warning("openpyxlがインストールされていません。Excel解析機能が無効です。")
 
 from .config import Config
 from .rag_service import RAGService
@@ -194,23 +212,29 @@ class DocumentCollector:
         if not self.drive_service:
             logger.warning("Google Driveサービスが利用できません")
             return
-        
+
         try:
-            # テキストファイルを検索
-            query = "mimeType='text/plain' or mimeType='text/csv' or mimeType='application/pdf'"
+            # PDF、Excel、テキストファイルを検索
+            query = (
+                "mimeType='text/plain' or "
+                "mimeType='text/csv' or "
+                "mimeType='application/pdf' or "
+                "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or "
+                "mimeType='application/vnd.ms-excel'"
+            )
             results = self.drive_service.files().list(
                 q=query,
                 fields="files(id, name, mimeType, modifiedTime)"
             ).execute()
-            
+
             files = results.get('files', [])
             logger.info(f"Google Driveファイルを{len(files)}件発見しました")
-            
+
             for file in files:
                 try:
                     # ファイルの内容を取得
                     content = self._extract_drive_file_content(file)
-                    
+
                     if content:
                         # RAGサービスに追加
                         self.rag_service.add_document(
@@ -225,13 +249,13 @@ class DocumentCollector:
                                 "collected_at": datetime.now().isoformat()
                             }
                         )
-                        
+
                         logger.info(f"Google Driveファイル '{file['name']}' を収集しました")
-                
+
                 except Exception as e:
                     logger.error(f"Google Driveファイル '{file['name']}' の処理中にエラーが発生しました", error=str(e))
                     continue
-            
+
         except Exception as e:
             logger.error("Google Drive収集中にエラーが発生しました", error=str(e))
 
@@ -288,18 +312,117 @@ class DocumentCollector:
     def _extract_drive_file_content(self, file: Dict[str, Any]) -> str:
         """Google Driveファイルの内容を抽出"""
         try:
-            # ファイルの内容をダウンロード
-            request = self.drive_service.files().get_media(fileId=file['id'])
-            content = request.execute()
-            
-            # テキストとしてデコード
-            if isinstance(content, bytes):
-                content = content.decode('utf-8')
-            
-            return content.strip()
-            
+            mime_type = file.get('mimeType', '')
+
+            # PDFファイルの処理
+            if mime_type == 'application/pdf':
+                return self._extract_pdf_content(file)
+
+            # Excelファイルの処理
+            elif mime_type in [
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-excel'
+            ]:
+                return self._extract_excel_content(file)
+
+            # テキストファイルの処理
+            else:
+                request = self.drive_service.files().get_media(fileId=file['id'])
+                content = request.execute()
+
+                # テキストとしてデコード
+                if isinstance(content, bytes):
+                    content = content.decode('utf-8', errors='ignore')
+
+                return content.strip()
+
         except Exception as e:
             logger.error(f"Google Driveファイル内容抽出中にエラーが発生しました: {file['name']}", error=str(e))
+            return ""
+
+    def _extract_pdf_content(self, file: Dict[str, Any]) -> str:
+        """PDFファイルからテキストを抽出"""
+        if not PDF_SUPPORT:
+            logger.warning(f"PDF解析がサポートされていません: {file['name']}")
+            return ""
+
+        try:
+            # PDFファイルをダウンロード
+            request = self.drive_service.files().get_media(fileId=file['id'])
+            pdf_content = request.execute()
+
+            # PyPDF2でテキスト抽出
+            pdf_file = io.BytesIO(pdf_content)
+            pdf_reader = PdfReader(pdf_file)
+
+            text_parts = []
+            for page_num, page in enumerate(pdf_reader.pages, 1):
+                try:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(f"=== ページ {page_num} ===\n{text}")
+                except Exception as e:
+                    logger.warning(f"PDFページ {page_num} の抽出に失敗: {file['name']}", error=str(e))
+                    continue
+
+            extracted_text = "\n\n".join(text_parts)
+            logger.info(f"PDFから{len(pdf_reader.pages)}ページのテキストを抽出しました: {file['name']}")
+            return extracted_text
+
+        except Exception as e:
+            logger.error(f"PDF内容抽出中にエラーが発生しました: {file['name']}", error=str(e))
+            return ""
+
+    def _extract_excel_content(self, file: Dict[str, Any]) -> str:
+        """Excelファイルからテキストを抽出"""
+        if not EXCEL_SUPPORT:
+            logger.warning(f"Excel解析がサポートされていません: {file['name']}")
+            return ""
+
+        try:
+            # Excelファイルをダウンロード
+            request = self.drive_service.files().get_media(fileId=file['id'])
+            excel_content = request.execute()
+
+            # openpyxlで読み込み
+            excel_file = io.BytesIO(excel_content)
+            workbook = openpyxl.load_workbook(excel_file, data_only=True)
+
+            text_parts = []
+            for sheet_name in workbook.sheetnames:
+                try:
+                    worksheet = workbook[sheet_name]
+                    sheet_text = [f"=== シート: {sheet_name} ==="]
+
+                    # ヘッダー行の取得
+                    headers = []
+                    for cell in worksheet[1]:
+                        if cell.value:
+                            headers.append(str(cell.value))
+
+                    if headers:
+                        sheet_text.append(f"列: {', '.join(headers)}")
+
+                    # データ行の処理
+                    for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), 2):
+                        row_values = [str(val) if val is not None else "" for val in row]
+                        if any(row_values):  # 空行をスキップ
+                            row_text = " | ".join([f"{h}={v}" for h, v in zip(headers, row_values) if v])
+                            if row_text:
+                                sheet_text.append(f"行{row_num}: {row_text}")
+
+                    text_parts.append("\n".join(sheet_text))
+
+                except Exception as e:
+                    logger.warning(f"Excelシート '{sheet_name}' の処理に失敗: {file['name']}", error=str(e))
+                    continue
+
+            extracted_text = "\n\n".join(text_parts)
+            logger.info(f"Excelから{len(workbook.sheetnames)}シートのデータを抽出しました: {file['name']}")
+            return extracted_text
+
+        except Exception as e:
+            logger.error(f"Excel内容抽出中にエラーが発生しました: {file['name']}", error=str(e))
             return ""
 
     def health_check(self) -> bool:
