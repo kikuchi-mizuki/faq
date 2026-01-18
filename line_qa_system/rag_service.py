@@ -320,7 +320,12 @@ class RAGService:
         if not self.is_enabled:
             logger.warning("RAGServiceが無効です")
             return []
-        
+
+        # 代替RAG機能（Geminiのみ）の場合、ベクトル検索は利用できない
+        if not self.db_connection or not self.embedding_model:
+            logger.info("代替RAG機能では文書検索は利用できません（ベクトルDB未接続）")
+            return []
+
         try:
             # クエリの埋め込みベクトルを生成
             query_embedding = self._generate_embedding(query)
