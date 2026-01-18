@@ -307,10 +307,12 @@ class RAGService:
                     embedding = self._generate_embedding(chunk)
                     
                     # ベクトルを保存
+                    # 埋め込みベクトルを文字列形式に変換
+                    embedding_str = '[' + ','.join(map(str, embedding.tolist())) + ']'
                     cursor.execute("""
                         INSERT INTO document_embeddings (document_id, embedding)
-                        VALUES (%s, %s);
-                    """, (document_id, embedding.tolist()))
+                        VALUES (%s, %s::vector);
+                    """, (document_id, embedding_str))
                 
                 self.db_connection.commit()
                 logger.info(f"文書を追加しました: {source_type}/{source_id}")
@@ -336,22 +338,25 @@ class RAGService:
             query_embedding = self._generate_embedding(query)
             
             with self.db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                # 埋め込みベクトルを文字列形式に変換
+                embedding_str = '[' + ','.join(map(str, query_embedding.tolist())) + ']'
+
                 # 類似度検索
                 cursor.execute("""
-                    SELECT 
+                    SELECT
                         d.id,
                         d.source_type,
                         d.source_id,
                         d.title,
                         d.content,
                         d.metadata,
-                        1 - (de.embedding <=> %s) as similarity
+                        1 - (de.embedding <=> %s::vector) as similarity
                     FROM documents d
                     JOIN document_embeddings de ON d.id = de.document_id
-                    WHERE 1 - (de.embedding <=> %s) > %s
+                    WHERE 1 - (de.embedding <=> %s::vector) > %s
                     ORDER BY similarity DESC
                     LIMIT %s;
-                """, (query_embedding.tolist(), query_embedding.tolist(), self.similarity_threshold, limit))
+                """, (embedding_str, embedding_str, self.similarity_threshold, limit))
                 
                 results = cursor.fetchall()
                 
