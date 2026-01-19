@@ -60,7 +60,7 @@ class OptimizedAuthFlow:
                     self.use_redis = True
                     logger.info("Redis認証ストレージを初期化しました", redis_url=redis_url[:20] + "...")
                 except Exception as e:
-                    logger.error("Redis初期化に失敗しました。メモリベースを使用します。", error=str(e))
+                    logger.warning("Redis初期化に失敗しました。メモリベースを使用します。", error=str(e))
                     self.use_redis = False
             else:
                 logger.info("Redis設定が見つかりません。メモリベースの認証を使用します。")
@@ -636,7 +636,9 @@ class OptimizedAuthFlow:
                     if auth_data_json:
                         return json.loads(auth_data_json)
                 except Exception as e:
-                    logger.error("Redisからの認証情報取得に失敗しました。メモリを確認します。", error=str(e))
+                    logger.warning("Redisからの認証情報取得に失敗しました。メモリを確認します。", error=str(e))
+                    # Redis接続エラーの場合、今後はRedisを使用しない
+                    self.use_redis = False
 
             # メモリから取得
             return self.authenticated_users.get(user_id)
@@ -673,7 +675,9 @@ class OptimizedAuthFlow:
                         logger.info("Redisから認証情報を削除しました",
                                    user_id=hash_user_id(user_id))
                 except Exception as e:
-                    logger.error("Redisからの削除に失敗しました", error=str(e))
+                    logger.warning("Redisからの削除に失敗しました", error=str(e))
+                    # Redis接続エラーの場合、今後はRedisを使用しない
+                    self.use_redis = False
 
             # メモリからも削除（フォールバック）
             if user_id in self.authenticated_users:
