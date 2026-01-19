@@ -401,7 +401,38 @@ class OptimizedAuthFlow:
                 'auth_time': auth_time
             }
 
-            # Redisまたはメモリに認証情報を保存
+            # 1. データベースに永続化（最優先）
+            try:
+                from .auth_db_service import AuthDBService
+                auth_db = AuthDBService()
+
+                if auth_db.is_enabled:
+                    logger.info("データベースへの認証情報保存を開始します",
+                               user_id=hash_user_id(user_id))
+                    success = auth_db.save_auth(
+                        line_user_id=user_id,
+                        store_code=store_code,
+                        staff_id=staff_id,
+                        staff_name=staff['staff_name'],
+                        store_name=store['store_name'],
+                        expires_days=Config.AUTH_SESSION_DAYS
+                    )
+
+                    if success:
+                        logger.info("✅ データベースへの保存に成功しました",
+                                   user_id=hash_user_id(user_id))
+                    else:
+                        logger.error("❌ データベースへの保存に失敗しました",
+                                    user_id=hash_user_id(user_id))
+                else:
+                    logger.warning("⚠️ データベースが無効化されています",
+                                  user_id=hash_user_id(user_id))
+            except Exception as db_error:
+                logger.error("データベース保存中にエラーが発生しました",
+                            error=str(db_error),
+                            user_id=hash_user_id(user_id))
+
+            # 2. Redisまたはメモリに認証情報を保存（後方互換性）
             if self.use_redis and self.redis_client:
                 try:
                     # Redisに保存（30日間有効）
@@ -468,32 +499,54 @@ class OptimizedAuthFlow:
     def is_authenticated(self, user_id: str) -> bool:
         """ユーザーが認証済みかチェック（ステータスも確認）"""
         try:
-            # Redisまたはメモリから認証情報を取得
+            # 1. データベースから認証情報を取得（最優先）
             auth_info = None
+            try:
+                from .auth_db_service import AuthDBService
+                auth_db = AuthDBService()
 
-            if self.use_redis and self.redis_client:
-                # Redisから取得
-                try:
-                    key = f"auth:{user_id}"
-                    auth_data_json = self.redis_client.get(key)
-                    if auth_data_json:
-                        auth_info = json.loads(auth_data_json)
-                        logger.debug("Redisから認証情報を取得しました",
-                                   user_id=hash_user_id(user_id))
-                    else:
-                        logger.debug("ユーザーがRedisに存在しません",
+                if auth_db.is_enabled:
+                    db_auth = auth_db.get_auth(user_id)
+                    if db_auth:
+                        auth_info = {
+                            'store_code': db_auth['store_code'],
+                            'staff_id': db_auth['staff_id'],
+                            'store_name': db_auth.get('store_name', ''),
+                            'staff_name': db_auth.get('staff_name', ''),
+                            'auth_time': db_auth.get('auth_time', '').isoformat() if db_auth.get('auth_time') else ''
+                        }
+                        logger.debug("データベースから認証情報を取得しました",
+                                    user_id=hash_user_id(user_id))
+            except Exception as db_error:
+                logger.error("データベースからの取得中にエラーが発生しました",
+                            error=str(db_error),
+                            user_id=hash_user_id(user_id))
+
+            # 2. データベースに無い場合は、Redisまたはメモリから認証情報を取得（フォールバック）
+            if not auth_info:
+                if self.use_redis and self.redis_client:
+                    # Redisから取得
+                    try:
+                        key = f"auth:{user_id}"
+                        auth_data_json = self.redis_client.get(key)
+                        if auth_data_json:
+                            auth_info = json.loads(auth_data_json)
+                            logger.debug("Redisから認証情報を取得しました",
+                                       user_id=hash_user_id(user_id))
+                        else:
+                            logger.debug("ユーザーがRedisに存在しません",
+                                       user_id=hash_user_id(user_id))
+                            return False
+                    except Exception as e:
+                        logger.error("Redisからの取得に失敗しました。メモリを確認します。", error=str(e))
+                        auth_info = self.authenticated_users.get(user_id)
+                else:
+                    # メモリから取得
+                    auth_info = self.authenticated_users.get(user_id)
+                    if not auth_info:
+                        logger.debug("ユーザーが認証済みユーザーリストに存在しません",
                                    user_id=hash_user_id(user_id))
                         return False
-                except Exception as e:
-                    logger.error("Redisからの取得に失敗しました。メモリを確認します。", error=str(e))
-                    auth_info = self.authenticated_users.get(user_id)
-            else:
-                # メモリから取得
-                auth_info = self.authenticated_users.get(user_id)
-                if not auth_info:
-                    logger.debug("ユーザーが認証済みユーザーリストに存在しません",
-                               user_id=hash_user_id(user_id))
-                    return False
 
             if not auth_info:
                 return False
