@@ -158,8 +158,15 @@ class AuthService:
             staff_name = staff_info.get('staff_name', '')
             store_name = staff_info.get('store_name', '')
 
+            logger.info("認証完了処理を開始します",
+                       user_id=hash_user_id(user_id),
+                       store_code=store_code,
+                       staff_id=staff_id,
+                       db_enabled=self.auth_db.is_enabled)
+
             # 1. データベースに保存（永続化）
             if self.auth_db.is_enabled:
+                logger.info("データベースへの認証情報保存を開始します")
                 success = self.auth_db.save_auth(
                     line_user_id=user_id,
                     store_code=store_code,
@@ -169,8 +176,13 @@ class AuthService:
                     expires_days=self.auth_session_days
                 )
 
-                if not success:
+                if success:
+                    logger.info("✅ データベースへの保存に成功しました")
+                else:
+                    logger.error("❌ データベースへの保存に失敗しました")
                     logger.warning("データベースへの保存に失敗しましたが、セッションには保存します")
+            else:
+                logger.warning("⚠️ データベースが無効化されています。セッションのみに保存します")
 
             # 2. セッションにも保存（後方互換性とフォールバック）
             from .session_service import SessionService

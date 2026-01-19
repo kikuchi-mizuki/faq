@@ -76,11 +76,22 @@ class AuthDBService:
         expires_days: int = 30
     ) -> bool:
         """認証情報を保存"""
+        logger.info("save_auth呼び出し",
+                   user_id=hash_user_id(line_user_id),
+                   is_enabled=self.is_enabled,
+                   has_connection=self.connection is not None)
+
         if not self._ensure_connection():
+            logger.error("データベース接続の確保に失敗しました")
             return False
 
         try:
             expires_at = datetime.now() + timedelta(days=expires_days)
+
+            logger.debug("UPSERTクエリを実行します",
+                        line_user_id=hash_user_id(line_user_id),
+                        store_code=store_code,
+                        staff_id=staff_id)
 
             with self.connection.cursor() as cursor:
                 # UPSERTクエリ（既存の場合は更新、新規の場合は挿入）
@@ -110,6 +121,7 @@ class AuthDBService:
                 ))
 
             self.connection.commit()
+            logger.info("✅ COMMIT完了")
 
             # 認証ログを記録
             self._log_auth_action(line_user_id, 'login', store_code, staff_id, success=True)
@@ -122,11 +134,16 @@ class AuthDBService:
             return True
 
         except Exception as e:
-            logger.error("認証情報の保存に失敗しました",
+            logger.error("❌ 認証情報の保存に失敗しました",
                         user_id=hash_user_id(line_user_id),
-                        error=str(e))
+                        error=str(e),
+                        error_type=type(e).__name__)
+            import traceback
+            logger.error("スタックトレース", trace=traceback.format_exc())
+
             if self.connection:
                 self.connection.rollback()
+                logger.info("ROLLBACK完了")
             return False
 
     def get_auth(self, line_user_id: str) -> Optional[Dict[str, Any]]:
