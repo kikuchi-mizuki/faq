@@ -195,8 +195,11 @@ class RAGService:
                 self.embedding_model = SentenceTransformer(self.embedding_model_name)
                 logger.info("Embeddingモデルの読み込みが完了しました")
             else:
-                logger.error("sentence-transformersまたはnumpyが利用できません")
-                raise ImportError("sentence-transformersまたはnumpyが利用できません")
+                logger.warning("sentence-transformersまたはnumpyが利用できません")
+                logger.warning("完全RAG機能は利用できないため、代替RAG機能に切り替えます")
+                # 代替モードに切り替え
+                self._initialize_fallback_rag()
+                return
 
             # Gemini APIの初期化
             if self.gemini_api_key:

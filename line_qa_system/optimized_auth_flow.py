@@ -445,7 +445,9 @@ class OptimizedAuthFlow:
                                staff_id=staff_id,
                                ttl_days=Config.AUTH_SESSION_DAYS)
                 except Exception as e:
-                    logger.error("Redisへの保存に失敗しました。メモリに保存します。", error=str(e))
+                    logger.warning("Redisへの保存に失敗しました。メモリに保存します。", error=str(e))
+                    # Redis接続エラーの場合、今後はRedisを使用しない
+                    self.use_redis = False
                     self.authenticated_users[user_id] = auth_data
             else:
                 # メモリに保存（フォールバック）
@@ -536,9 +538,14 @@ class OptimizedAuthFlow:
                         else:
                             logger.debug("ユーザーがRedisに存在しません",
                                        user_id=hash_user_id(user_id))
-                            return False
+                            # Redisに無い場合はメモリもチェック
+                            auth_info = self.authenticated_users.get(user_id)
+                            if not auth_info:
+                                return False
                     except Exception as e:
-                        logger.error("Redisからの取得に失敗しました。メモリを確認します。", error=str(e))
+                        logger.warning("Redisからの取得に失敗しました。メモリにフォールバックします。", error=str(e))
+                        # Redis接続エラーの場合、今後はRedisを使用しない
+                        self.use_redis = False
                         auth_info = self.authenticated_users.get(user_id)
                 else:
                     # メモリから取得
