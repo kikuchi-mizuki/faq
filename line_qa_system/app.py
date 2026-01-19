@@ -700,6 +700,53 @@ def rag_status():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/admin/documents", methods=["GET"])
+@require_admin
+def list_documents():
+    """登録されている文書の一覧を取得（管理者のみ）"""
+    try:
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_connection:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスまたはDB接続が無効です"
+            }), 500
+
+        with rag_service.db_connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    source_type,
+                    source_id,
+                    title,
+                    COUNT(*) as chunk_count,
+                    MAX(created_at) as last_updated
+                FROM documents
+                GROUP BY source_type, source_id, title
+                ORDER BY last_updated DESC
+                LIMIT 50;
+            """)
+            results = cursor.fetchall()
+
+            documents = []
+            for row in results:
+                documents.append({
+                    "source_type": row[0],
+                    "source_id": row[1],
+                    "title": row[2],
+                    "chunk_count": row[3],
+                    "last_updated": str(row[4])
+                })
+
+            return jsonify({
+                "status": "success",
+                "total_documents": len(documents),
+                "documents": documents
+            })
+
+    except Exception as e:
+        logger.error("文書一覧の取得に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
