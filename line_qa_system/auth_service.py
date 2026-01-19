@@ -18,48 +18,66 @@ logger = structlog.get_logger(__name__)
 
 class AuthService:
     """認証サービス"""
-    
+
     def __init__(self):
         """初期化"""
         self.auth_enabled = Config.AUTH_ENABLED
         self.auth_timeout = Config.AUTH_TIMEOUT
         self.auth_max_attempts = Config.AUTH_MAX_ATTEMPTS
         self.auth_session_days = Config.AUTH_SESSION_DAYS
-        
-        # 認証状態の管理
+
+        # 認証状態の管理（フロー制御用：メモリのみ）
         self.auth_states = {}  # 認証フローの状態管理
         self.pending_auth = {}  # 認証待ちのユーザー
         self.temp_data = {}  # 一時的な認証データ
-        self.authenticated_users = {}  # 認証済みユーザーの情報
-        
-        logger.info("認証サービスを初期化しました", 
+
+        # データベースサービスの初期化
+        from .auth_db_service import AuthDBService
+        self.auth_db = AuthDBService()
+
+        logger.info("認証サービスを初期化しました",
                    auth_enabled=self.auth_enabled,
                    auth_timeout=self.auth_timeout,
-                   auth_max_attempts=self.auth_max_attempts)
+                   auth_max_attempts=self.auth_max_attempts,
+                   db_enabled=self.auth_db.is_enabled)
     
     def is_authenticated(self, user_id: str) -> bool:
         """ユーザーが認証済みかチェック"""
         if not self.auth_enabled:
             return True  # 認証が無効な場合は常に認証済み
-        
+
         try:
-            # メモリ内の認証情報のみをチェック（SessionService依存を完全に除去）
-            if user_id in self.authenticated_users:
-                auth_info = self.authenticated_users[user_id]
-                
+            # データベースから認証情報を取得（永続化されているため再起動後も有効）
+            if self.auth_db.is_enabled:
+                return self.auth_db.is_authenticated(user_id)
+
+            # データベースが無効の場合はSessionServiceにフォールバック
+            from .session_service import SessionService
+            session_service = SessionService()
+            session = session_service.get_session(user_id)
+
+            if session:
                 # 認証情報の有効性をチェック
-                if auth_info.get('store_code') and auth_info.get('staff_id'):
+                if session.get('authenticated') and session.get('store_code') and session.get('staff_id'):
+                    # expires_atチェック
+                    expires_at_str = session.get('expires_at')
+                    if expires_at_str:
+                        try:
+                            expires_at = datetime.fromisoformat(expires_at_str)
+                            if datetime.now() > expires_at:
+                                # 期限切れ
+                                session_service.delete_session(user_id)
+                                return False
+                        except:
+                            pass  # 日時の解析に失敗した場合は継続
+
                     return True
-                else:
-                    # 無効な認証情報は削除
-                    del self.authenticated_users[user_id]
-                    return False
-            
+
             return False
-            
+
         except Exception as e:
-            logger.error("認証チェック中にエラーが発生しました", 
-                        user_id=hash_user_id(user_id), 
+            logger.error("認証チェック中にエラーが発生しました",
+                        user_id=hash_user_id(user_id),
                         error=str(e))
             return False
     
@@ -137,80 +155,112 @@ class AuthService:
     def complete_auth(self, user_id: str, store_code: str, staff_id: str, staff_info: dict) -> bool:
         """認証完了処理"""
         try:
-            # セッションに認証情報を保存
+            staff_name = staff_info.get('staff_name', '')
+            store_name = staff_info.get('store_name', '')
+
+            # 1. データベースに保存（永続化）
+            if self.auth_db.is_enabled:
+                success = self.auth_db.save_auth(
+                    line_user_id=user_id,
+                    store_code=store_code,
+                    staff_id=staff_id,
+                    staff_name=staff_name,
+                    store_name=store_name,
+                    expires_days=self.auth_session_days
+                )
+
+                if not success:
+                    logger.warning("データベースへの保存に失敗しましたが、セッションには保存します")
+
+            # 2. セッションにも保存（後方互換性とフォールバック）
             from .session_service import SessionService
             session_service = SessionService()
-            
+
             expires_at = datetime.now() + timedelta(days=self.auth_session_days)
-            
+
             session_data = {
                 'authenticated': True,
                 'store_code': store_code,
                 'staff_id': staff_id,
-                'staff_name': staff_info.get('staff_name', ''),
-                'store_name': staff_info.get('store_name', ''),
+                'staff_name': staff_name,
+                'store_name': store_name,
                 'auth_time': datetime.now().isoformat(),
                 'expires_at': expires_at.isoformat()
             }
-            
+
             # セッションに保存（30日間有効）
             session_service.set_session(user_id, session_data, ttl=2592000)
-            
-            # スタッフの最終利用日時を更新
-            from .staff_service import StaffService
-            staff_service = StaffService()
-            staff_service.update_last_activity(store_code, staff_id)
-            
-            # 認証待ちをクリア
+
+            # 3. スタッフの最終利用日時を更新
+            try:
+                from .staff_service import StaffService
+                staff_service = StaffService()
+                staff_service.update_last_activity(store_code, staff_id)
+            except Exception as e:
+                logger.warning("スタッフ最終利用日時の更新に失敗しました", error=str(e))
+
+            # 4. 認証待ちをクリア
             self.clear_auth_pending(user_id)
-            
-            logger.info("認証が完了しました", 
+
+            logger.info("認証が完了しました",
                        user_id=hash_user_id(user_id),
                        store_code=store_code,
-                       staff_id=staff_id)
-            
+                       staff_id=staff_id,
+                       db_saved=self.auth_db.is_enabled)
+
             return True
-            
+
         except Exception as e:
-            logger.error("認証完了処理に失敗しました", 
-                        user_id=hash_user_id(user_id), 
+            logger.error("認証完了処理に失敗しました",
+                        user_id=hash_user_id(user_id),
                         error=str(e))
             return False
     
     def get_store_name(self, user_id: str) -> str:
         """店舗名を取得"""
         try:
+            # データベースから取得
+            if self.auth_db.is_enabled:
+                auth = self.auth_db.get_auth(user_id)
+                if auth:
+                    return auth.get('store_name', '')
+
+            # フォールバック: セッションから取得
             from .session_service import SessionService
             session_service = SessionService()
             session = session_service.get_session(user_id)
-            
+
             if session:
                 return session.get('store_name', '')
             return ''
-            
+
         except Exception as e:
-            logger.error("店舗名の取得に失敗しました", 
-                        user_id=hash_user_id(user_id), 
+            logger.error("店舗名の取得に失敗しました",
+                        user_id=hash_user_id(user_id),
                         error=str(e))
             return ''
     
     def deauthenticate_user(self, user_id: str) -> bool:
         """ユーザーの認証を無効化"""
         try:
-            # セッションを削除
+            # データベースから削除
+            if self.auth_db.is_enabled:
+                self.auth_db.delete_auth(user_id)
+
+            # セッションも削除
             from .session_service import SessionService
             session_service = SessionService()
             session_service.delete_session(user_id)
-            
+
             # 認証状態をクリア
             self.clear_auth_pending(user_id)
-            
+
             logger.info("ユーザーの認証を無効化しました", user_id=hash_user_id(user_id))
             return True
-            
+
         except Exception as e:
-            logger.error("認証の無効化に失敗しました", 
-                        user_id=hash_user_id(user_id), 
+            logger.error("認証の無効化に失敗しました",
+                        user_id=hash_user_id(user_id),
                         error=str(e))
             return False
     

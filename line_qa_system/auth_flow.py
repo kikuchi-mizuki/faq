@@ -53,85 +53,175 @@ class AuthFlow:
             logger.error("認証フローサービスの初期化に失敗しました", error=str(e))
     
     def process_auth_flow(self, event: Dict[str, Any]) -> bool:
-        """認証フローの処理"""
+        """認証フローの処理（簡素化版）"""
         try:
             if not self.auth_service:
                 self.initialize_services()
-            
+
             user_id = event["source"]["userId"]
-            message_text = event["message"]["text"]
+            message_text = event["message"]["text"].strip()
             reply_token = event["replyToken"]
-            
+
             # 認証状態のチェック
             if self.auth_service.is_authenticated(user_id):
                 # 既に認証済み
                 return False  # 通常のBot処理に進む
-            
+
+            # 認証コード形式のチェック（例: STORE004, STAFF123）
+            # 店舗コードと社員番号を結合した形式を受け付ける
+            if self._is_auth_code_format(message_text):
+                return self.process_auth_code(user_id, message_text, reply_token)
+
             # 認証フローの状態をチェック
             auth_state = self.auth_service.get_auth_state(user_id)
-            
-            if auth_state == 'not_started':
-                # 認証開始
-                self.send_auth_required_message(reply_token)
-                self.auth_service.set_auth_state(user_id, 'auth_required')
+
+            if auth_state == 'not_started' or auth_state == 'auth_required':
+                # 認証プロセスを開始
+                if user_id not in self.auth_service.pending_auth:
+                    self.auth_service.pending_auth[user_id] = {
+                        'started_at': datetime.now(),
+                        'attempts': 0,
+                        'state': 'awaiting_code'
+                    }
+
+                # 認証案内メッセージを送信
+                self.send_simple_auth_message(reply_token)
+                self.auth_service.set_auth_state(user_id, 'awaiting_code')
                 return True
-                
-            elif auth_state == 'auth_required':
-                # 認証ボタンが押された場合
-                if message_text.strip().lower() in ['認証', 'auth', 'ログイン', 'login']:
-                    self.send_staff_verification_message(reply_token)
-                    self.auth_service.set_auth_state(user_id, 'staff_verification')
-                    return True
-                else:
-                    self.send_auth_required_message(reply_token)
-                    return True
-                    
-            elif auth_state == 'staff_verification':
-                # スタッフ認証の処理
-                return self.process_staff_verification(user_id, message_text, reply_token)
-                
-            elif auth_state == 'store_code_input':
-                # 店舗コード入力の処理
-                return self.process_store_code_input(user_id, message_text, reply_token)
-                
-            elif auth_state == 'staff_id_input':
-                # 社員番号入力の処理
-                return self.process_staff_id_input(user_id, message_text, reply_token)
-            
+
+            elif auth_state == 'awaiting_code':
+                # 認証コードの入力待ち
+                return self.process_auth_code(user_id, message_text, reply_token)
+
             return True
-            
+
         except Exception as e:
-            logger.error("認証フローの処理中にエラーが発生しました", 
-                        user_id=hash_user_id(user_id), 
+            logger.error("認証フローの処理中にエラーが発生しました",
+                        user_id=hash_user_id(user_id),
                         error=str(e))
             return True
+
+    def _is_auth_code_format(self, text: str) -> bool:
+        """認証コードの形式かチェック"""
+        # STORE004のような形式、または数字のみ（店舗コード）
+        text_upper = text.upper()
+        return (
+            text_upper.startswith('STORE') or
+            text_upper.startswith('STAFF') or
+            (len(text) >= 3 and text.replace('-', '').replace('_', '').isalnum())
+        )
     
-    def send_auth_required_message(self, reply_token: str):
-        """認証が必要なメッセージを送信"""
+    def send_simple_auth_message(self, reply_token: str):
+        """簡素化された認証案内メッセージを送信"""
         try:
-            message = {
-                "type": "template",
-                "altText": "認証が必要です",
-                "template": {
-                    "type": "buttons",
-                    "text": "このBotをご利用いただくには認証が必要です。\n\nスタッフの方は下のボタンを押して認証してください。",
-                    "actions": [
-                        {
-                            "type": "postback",
-                            "label": "認証する",
-                            "data": "action=auth_start"
-                        }
-                    ]
-                }
-            }
-            
-            self.line_client.send_reply_message(reply_token, [message])
-            
+            message = "このBotをご利用いただくには認証が必要です。\n\n"\
+                     "📝 認証コードを入力してください。\n\n"\
+                     "例: STORE004\n\n"\
+                     "※認証コードが不明な場合は管理者にお問い合わせください。"
+
+            self.line_client.reply_text(reply_token, message)
+
         except Exception as e:
-            logger.error("認証必要メッセージの送信に失敗しました", error=str(e))
-            # フォールバック: テキストメッセージ
-            fallback_message = "このBotをご利用いただくには認証が必要です。\n\n「認証」と入力してください。"
-            self.line_client.reply_text(reply_token, fallback_message)
+            logger.error("認証メッセージの送信に失敗しました", error=str(e))
+
+    def process_auth_code(self, user_id: str, auth_code: str, reply_token: str) -> bool:
+        """認証コードを処理"""
+        try:
+            # 認証試行回数のチェック
+            attempts = self.auth_service.get_auth_attempts(user_id)
+            if attempts >= self.auth_service.auth_max_attempts:
+                error_message = "認証試行回数の上限に達しました。\n\n"\
+                              "管理者にお問い合わせください。"
+                self.line_client.reply_text(reply_token, error_message)
+                self.auth_service.clear_auth_pending(user_id)
+                return True
+
+            # 認証コードを解析して店舗コードとスタッフIDを抽出
+            store_code, staff_id = self._parse_auth_code(auth_code)
+
+            if not store_code or not staff_id:
+                # 認証試行回数を増加
+                self.auth_service.increment_auth_attempts(user_id)
+                remaining = self.auth_service.auth_max_attempts - (attempts + 1)
+
+                error_message = f"認証コードの形式が正しくありません。\n\n"\
+                              f"正しい形式: STORE004\n"\
+                              f"残り試行回数: {remaining}回"
+
+                self.line_client.reply_text(reply_token, error_message)
+                return True
+
+            # 店舗とスタッフの認証
+            auth_result = self.verify_staff_credentials(store_code, staff_id)
+
+            if auth_result['success']:
+                # 認証成功
+                self.complete_staff_auth(user_id, store_code, staff_id, auth_result['staff'])
+
+                success_message = f"✅ 認証が完了しました！\n\n"\
+                                f"店舗: {auth_result['store']['store_name']}\n"\
+                                f"スタッフ: {auth_result['staff']['staff_name']}\n\n"\
+                                f"Botをご利用いただけます。"
+
+                self.line_client.reply_text(reply_token, success_message)
+                self.auth_service.set_auth_state(user_id, 'authenticated')
+                return True
+
+            else:
+                # 認証失敗
+                self.auth_service.increment_auth_attempts(user_id)
+                remaining = self.auth_service.auth_max_attempts - (attempts + 1)
+
+                if remaining <= 0:
+                    error_message = f"❌ 認証に失敗しました。\n\n"\
+                                  f"理由: {auth_result['error']}\n\n"\
+                                  f"試行回数の上限に達しました。\n"\
+                                  f"管理者にお問い合わせください。"
+                    self.auth_service.clear_auth_pending(user_id)
+                else:
+                    error_message = f"❌ 認証に失敗しました。\n\n"\
+                                  f"理由: {auth_result['error']}\n\n"\
+                                  f"残り試行回数: {remaining}回\n"\
+                                  f"認証コードを確認してください。"
+
+                self.line_client.reply_text(reply_token, error_message)
+                return True
+
+        except Exception as e:
+            logger.error("認証コード処理中にエラーが発生しました",
+                        user_id=hash_user_id(user_id),
+                        error=str(e))
+            return True
+
+    def _parse_auth_code(self, auth_code: str) -> tuple:
+        """
+        認証コードを解析して店舗コードとスタッフIDを抽出
+
+        例:
+        - STORE004 -> ('STORE004', '004')
+        - 004 -> ('STORE004', '004')
+        """
+        auth_code = auth_code.strip().upper()
+
+        # STORE004形式
+        if auth_code.startswith('STORE'):
+            # STOREの後の数字を抽出
+            staff_id = auth_code.replace('STORE', '')
+            store_code = auth_code
+            return (store_code, staff_id)
+
+        # 数字のみの場合（例: 004）
+        if auth_code.isdigit():
+            store_code = f'STORE{auth_code}'
+            staff_id = auth_code
+            return (store_code, staff_id)
+
+        # その他の形式は無効
+        return (None, None)
+
+    def send_auth_required_message(self, reply_token: str):
+        """認証が必要なメッセージを送信（後方互換性用）"""
+        self.send_simple_auth_message(reply_token)
     
     def send_staff_verification_message(self, reply_token: str):
         """スタッフ認証メッセージを送信"""
