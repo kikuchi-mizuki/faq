@@ -354,7 +354,8 @@ class RAGService:
                 # 埋め込みベクトルを文字列形式に変換
                 embedding_str = '[' + ','.join(map(str, query_embedding.tolist())) + ']'
 
-                # 類似度検索
+                # 類似度検索（まず閾値なしで全件取得してスコアを確認）
+                print(f"🔍 類似度閾値: {self.similarity_threshold}")
                 cursor.execute("""
                     SELECT
                         d.id,
@@ -366,13 +367,22 @@ class RAGService:
                         1 - (de.embedding <=> %s::vector) as similarity
                     FROM documents d
                     JOIN document_embeddings de ON d.id = de.document_id
-                    WHERE 1 - (de.embedding <=> %s::vector) > %s
                     ORDER BY similarity DESC
-                    LIMIT %s;
-                """, (embedding_str, embedding_str, self.similarity_threshold, limit))
-                
-                results = cursor.fetchall()
-                print(f"✅ DB検索結果: {len(results)}件")
+                    LIMIT 10;
+                """, (embedding_str,))
+
+                all_results = cursor.fetchall()
+                print(f"🔍 全文書の類似度TOP10:")
+                for i, row in enumerate(all_results[:5]):
+                    print(f"  {i+1}. similarity={row['similarity']:.4f}, title={row['title'][:50]}")
+
+                # 閾値でフィルタリング
+                results = [r for r in all_results if r['similarity'] > self.similarity_threshold]
+                print(f"✅ 閾値 {self.similarity_threshold} 以上: {len(results)}件")
+
+                # limitで絞る
+                results = results[:limit]
+                print(f"✅ DB検索結果（最終）: {len(results)}件")
 
                 # 辞書形式に変換
                 documents = []
