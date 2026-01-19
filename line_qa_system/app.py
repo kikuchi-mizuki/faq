@@ -750,10 +750,14 @@ def list_documents():
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
-    """Google Driveから文書を収集（管理者のみ）- バックグラウンド実行"""
+    """Google Driveから文書を収集（管理者のみ）- 同期実行"""
     try:
         # RAGサービスの状態確認
+        print("🔍 文書収集APIが呼ばれました")
+        logger.info("文書収集APIが呼ばれました")
+
         if not rag_service or not rag_service.is_enabled:
+            print("❌ RAGサービスが無効です")
             return jsonify({
                 "status": "error",
                 "message": "RAGサービスが無効です。GEMINI_API_KEYとDATABASE_URLを設定してください。",
@@ -762,46 +766,48 @@ def collect_documents():
             }), 500
 
         if not document_collector:
+            print("❌ DocumentCollectorが初期化されていません")
             return jsonify({
                 "status": "error",
                 "message": "DocumentCollectorが初期化されていません。RAG機能が無効の可能性があります。"
             }), 500
 
-        # バックグラウンドで文書収集を実行
-        def collect_in_background():
-            try:
-                print("📝 [DEBUG] バックグラウンドスレッド開始")
-                logger.info("バックグラウンドで文書収集を開始します")
-                print("📝 [DEBUG] document_collector.collect_all_documents()を呼び出します")
-                success = document_collector.collect_all_documents()
-                print(f"📝 [DEBUG] 文書収集結果: {success}")
-                if success:
-                    logger.info("管理者による文書収集が完了しました")
-                else:
-                    logger.error("文書収集中にエラーが発生しました")
-            except Exception as e:
-                print(f"❌ [DEBUG] バックグラウンドエラー: {e}")
-                import traceback
-                traceback.print_exc()
-                logger.error("バックグラウンド文書収集に失敗しました", error=str(e), exc_info=True)
+        print("✅ 文書収集を開始します（同期実行）")
+        logger.info("文書収集を開始します")
 
-        # スレッドで非同期実行
-        print("🚀 [DEBUG] バックグラウンドスレッドを起動します")
-        collection_thread = threading.Thread(target=collect_in_background, daemon=True)
-        collection_thread.start()
-        print("✅ [DEBUG] バックグラウンドスレッドを起動しました")
+        # 同期的に実行（デバッグ用）
+        try:
+            print("📝 document_collector.collect_all_documents()を呼び出します")
+            success = document_collector.collect_all_documents()
+            print(f"📝 文書収集結果: {success}")
 
-        logger.info("文書収集をバックグラウンドで開始しました")
+            if success:
+                logger.info("管理者による文書収集が完了しました")
+                return jsonify({
+                    "status": "success",
+                    "message": "文書収集が完了しました",
+                    "timestamp": time.time()
+                })
+            else:
+                logger.error("文書収集中にエラーが発生しました")
+                return jsonify({
+                    "status": "error",
+                    "message": "文書収集中にエラーが発生しました"
+                }), 500
 
-        # すぐに応答を返す
-        return jsonify({
-            "status": "success",
-            "message": "文書収集をバックグラウンドで開始しました。ログで進捗を確認してください。",
-            "timestamp": time.time()
-        })
+        except Exception as e:
+            print(f"❌ 文書収集エラー: {e}")
+            import traceback
+            traceback.print_exc()
+            logger.error("文書収集に失敗しました", error=str(e), exc_info=True)
+            return jsonify({
+                "status": "error",
+                "message": f"文書収集エラー: {str(e)}"
+            }), 500
 
     except Exception as e:
-        logger.error("文書収集の開始に失敗しました", error=str(e), exc_info=True)
+        print(f"❌ APIエラー: {e}")
+        logger.error("文書収集APIでエラーが発生しました", error=str(e), exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
