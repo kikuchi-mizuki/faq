@@ -236,11 +236,22 @@ def callback():
             return jsonify({"status": "ok"})
 
         # イベントの処理
-        for event in body.get("events", []):
+        events = body.get("events", [])
+        print(f"📥 Webhook受信: {len(events)}個のイベント")
+        logger.info(f"Webhook受信: {len(events)}個のイベント")
+
+        for event in events:
+            print(f"📋 イベントタイプ: {event.get('type')}")
+            logger.info(f"イベント処理", event_type=event.get('type'))
+
             if event["type"] == "message" and event["message"]["type"] == "text":
+                print(f"✅ テキストメッセージを処理します")
                 process_text_message(event, start_time)
             elif event["type"] == "postback":
+                print(f"✅ ポストバックを処理します")
                 process_postback_message(event, start_time)
+            else:
+                print(f"⚠️ 未対応のイベントタイプ: {event.get('type')}")
 
         return jsonify({"status": "ok"})
 
@@ -294,9 +305,11 @@ def process_text_message(event: Dict[str, Any], start_time: float):
     # ユーザーIDのハッシュ化
     hashed_user_id = hash_user_id(user_id)
 
+    print(f"📨 メッセージを受信: user={hashed_user_id}, text='{message_text}'")
     logger.info("メッセージを受信しました", user_id=hashed_user_id, text=message_text)
 
     try:
+        print("🔧 メッセージ処理を開始します")
         # サービスが初期化されていない場合は初期化を試行
         if qa_service is None or line_client is None:
             initialize_services()
@@ -540,8 +553,11 @@ def process_text_message(event: Dict[str, Any], start_time: float):
         )
 
         # エラー時の応答
-        error_text = "申し訳ございません。一時的なエラーが発生しました。"
-        line_client.reply_text(reply_token, error_text)
+        try:
+            error_text = "申し訳ございません。一時的なエラーが発生しました。"
+            line_client.reply_text(reply_token, error_text)
+        except Exception as reply_error:
+            logger.error("エラーメッセージの送信にも失敗しました", error=str(reply_error))
 
 
 def format_answer(answer: str, question: str, tags: str) -> str:
