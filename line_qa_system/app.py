@@ -120,9 +120,30 @@ def initialize_services():
             try:
                 document_collector = DocumentCollector(rag_service)
                 logger.info("DocumentCollectorの初期化が完了しました")
+
+                # 起動時に文書を自動収集（バックグラウンド）
+                def initial_collect():
+                    try:
+                        logger.info("起動時の文書収集を開始します")
+                        time.sleep(5)  # サービス起動完了を待つ
+                        success = document_collector.collect_all_documents()
+                        if success:
+                            logger.info("✅ 起動時の文書収集が完了しました")
+                        else:
+                            logger.warning("⚠️ 起動時の文書収集でエラーが発生しました")
+                    except Exception as e:
+                        logger.error("起動時の文書収集中にエラーが発生しました", error=str(e))
+
+                initial_thread = threading.Thread(target=initial_collect)
+                initial_thread.daemon = True
+                initial_thread.start()
+
+                # 定期的な自動収集を開始（1時間ごと）
+                start_auto_document_collection()
+
             except Exception as e:
                 logger.error("DocumentCollectorの初期化に失敗しました", error=str(e))
-        
+
         print("✅ 全てのサービスの初期化が完了しました")
         logger.info("全てのサービスの初期化が完了しました")
 
@@ -136,6 +157,36 @@ def initialize_services():
         logger.warning("一部のサービスが初期化できませんでした。基本機能のみ利用可能です。")
 
 
+def start_auto_document_collection():
+    """定期的な文書収集を開始（1時間ごと）"""
+    def auto_collect_worker():
+        while True:
+            try:
+                time.sleep(3600)  # 1時間ごと
+                logger.info("定期文書収集を開始します")
+
+                # DocumentCollectorが初期化されている場合のみ実行
+                if document_collector:
+                    try:
+                        success = document_collector.collect_all_documents()
+                        if success:
+                            logger.info("✅ 定期文書収集が完了しました")
+                        else:
+                            logger.warning("⚠️ 定期文書収集でエラーが発生しました")
+                    except Exception as e:
+                        logger.error("定期文書収集中にエラーが発生しました", error=str(e))
+                else:
+                    logger.warning("DocumentCollectorが初期化されていないため、定期文書収集をスキップします")
+
+            except Exception as e:
+                logger.error("定期文書収集ワーカーでエラーが発生しました", error=str(e))
+
+    # バックグラウンドで定期文書収集を開始
+    collect_thread = threading.Thread(target=auto_collect_worker, daemon=True)
+    collect_thread.start()
+    logger.info("定期文書収集機能を開始しました（1時間ごと）")
+
+
 def start_auto_reload():
     """定期的な自動リロード機能を開始"""
     last_sheet_update = None
@@ -146,12 +197,12 @@ def start_auto_reload():
             try:
                 time.sleep(900)  # 15分ごと（API制限を考慮）
                 logger.info("自動リロードチェック開始")
-                
+
                 # スプレッドシートの最終更新時刻をチェック
                 try:
                     # 現在の最終更新時刻を取得（簡易実装）
                     current_time = time.time()
-                    
+
                     # サービスが初期化されていない場合はスキップ
                     if qa_service is None or flow_service is None:
                         logger.info("サービスが初期化されていないため、自動リロードをスキップします")
@@ -167,13 +218,13 @@ def start_auto_reload():
                         qa_service.reload_cache()
                         flow_service.reload_flows()
                         logger.info("定期自動リロード完了")
-                        
+
                 except Exception as e:
                     logger.error("スプレッドシート更新チェック中にエラー", error=str(e))
-                
+
             except Exception as e:
                 logger.error("自動リロード中にエラーが発生しました", error=str(e))
-    
+
     # バックグラウンドで自動リロードを開始
     reload_thread = threading.Thread(target=auto_reload_worker, daemon=True)
     reload_thread.start()
