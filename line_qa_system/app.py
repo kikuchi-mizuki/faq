@@ -492,20 +492,32 @@ def process_text_message(event: Dict[str, Any], start_time: float):
             else:
                 # 明確なマッチが見つからない場合、RAGで回答を試行
                 rag_answer = None
+                print(f"🤔 Q&Aに該当なし。RAGで回答を試行します: message='{message_text}'")
+                logger.info("Q&Aに該当なし。RAGで回答を試行", user_id=hashed_user_id, message=message_text)
+
                 if rag_service and rag_service.is_enabled:
+                    print(f"✅ RAGサービスが有効です")
                     try:
                         # RAGで類似文書を検索
+                        print(f"🔍 RAGで類似文書を検索しています...")
                         similar_docs = rag_service.search_similar_documents(message_text, limit=3)
+                        print(f"🔍 検索結果: {len(similar_docs)}件の類似文書")
 
                         if similar_docs:
                             # 類似文書が見つかった場合、コンテキストを構築してAI回答生成
+                            print(f"✅ 類似文書が見つかりました。AI回答を生成します")
                             context = rag_service._build_context(similar_docs)
                             rag_answer = rag_service.generate_answer(message_text, context)
+                            print(f"✅ RAG回答生成完了")
                             logger.info("RAGで回答を生成しました", user_id=hashed_user_id, doc_count=len(similar_docs))
                         else:
+                            print(f"⚠️ RAGで類似文書が見つかりませんでした")
                             logger.info("RAGで類似文書が見つかりませんでした", user_id=hashed_user_id)
                     except Exception as e:
+                        print(f"❌ RAG回答生成中にエラー: {e}")
                         logger.error("RAG回答生成中にエラーが発生しました", user_id=hashed_user_id, error=str(e))
+                else:
+                    print(f"❌ RAGサービスが無効です: rag_service={rag_service is not None}, is_enabled={rag_service.is_enabled if rag_service else 'N/A'}")
 
                 # RAGで回答が得られた場合はそれを返す、そうでなければエスカレーション
                 if rag_answer:

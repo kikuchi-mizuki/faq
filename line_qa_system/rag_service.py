@@ -330,18 +330,25 @@ class RAGService:
 
     def search_similar_documents(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """類似文書を検索"""
+        print(f"🔍 search_similar_documents 呼び出し: query='{query}'")
+        logger.info(f"search_similar_documents 呼び出し: query='{query}'")
+
         if not self.is_enabled:
+            print("❌ RAGServiceが無効です")
             logger.warning("RAGServiceが無効です")
             return []
 
         # 代替RAG機能（Geminiのみ）の場合、ベクトル検索は利用できない
         if not self.db_connection or not self.embedding_model:
-            logger.info("代替RAG機能では文書検索は利用できません（ベクトルDB未接続）")
+            print(f"⚠️ DB接続: {self.db_connection is not None}, Embeddingモデル: {self.embedding_model is not None}")
+            logger.warning(f"代替RAG機能チェック: DB接続={self.db_connection is not None}, Embeddingモデル={self.embedding_model is not None}")
             return []
 
         try:
+            print("✅ ベクトル検索を開始します")
             # クエリの埋め込みベクトルを生成
             query_embedding = self._generate_embedding(query)
+            print(f"✅ クエリのEmbeddingを生成しました: shape={query_embedding.shape if hasattr(query_embedding, 'shape') else 'N/A'}")
             
             with self.db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 # 埋め込みベクトルを文字列形式に変換
@@ -365,7 +372,8 @@ class RAGService:
                 """, (embedding_str, embedding_str, self.similarity_threshold, limit))
                 
                 results = cursor.fetchall()
-                
+                print(f"✅ DB検索結果: {len(results)}件")
+
                 # 辞書形式に変換
                 documents = []
                 for row in results:
@@ -378,11 +386,13 @@ class RAGService:
                         'metadata': row['metadata'],
                         'similarity': float(row['similarity'])
                     })
-                
+
+                print(f"🎯 類似文書を検索しました: {len(documents)}件")
                 logger.info(f"類似文書を検索しました: {len(documents)}件")
                 return documents
-                
+
         except Exception as e:
+            print(f"❌ 類似文書検索中にエラー: {e}")
             logger.error("類似文書検索中にエラーが発生しました", error=str(e))
             return []
 
