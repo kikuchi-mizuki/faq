@@ -45,12 +45,14 @@ class RAGService:
     def __init__(self):
         """初期化"""
         try:
+            print("=" * 60)
+            print("📝 RAGServiceの初期化を開始します")
             logger.warning("RAGServiceの初期化を開始します")
-            
+
             self.embedding_model = None
             self.db_connection = None
             self.is_enabled = False
-            
+
             # 設定の読み込み
             self.gemini_api_key = os.getenv('GEMINI_API_KEY')
             self.database_url = os.getenv('DATABASE_URL')
@@ -58,69 +60,92 @@ class RAGService:
             self.vector_dimension = int(os.getenv('VECTOR_DIMENSION', '384'))
             self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.6'))
             self.gemini_model = None
-            
+
+            print(f"✅ GEMINI_API_KEY設定: {'あり' if self.gemini_api_key else 'なし'}")
+            print(f"✅ DATABASE_URL設定: {'あり' if self.database_url else 'なし'}")
             logger.warning("RAGServiceの設定を読み込みました")
-            
+
             # シンプルな初期化ロジック
             self._initialize_rag_service()
-            
+
             # デバッグ用ログ
+            print(f"🎯 RAGService初期化完了: is_enabled={self.is_enabled}")
+            print(f"🎯 Geminiモデル: {self.gemini_model is not None}")
+            print(f"🎯 DB接続: {self.db_connection is not None}")
+            print("=" * 60)
             logger.warning(f"RAGService初期化完了: is_enabled={self.is_enabled}")
-            
+
         except Exception as e:
+            print(f"❌ RAGServiceの初期化中にエラー: {e}")
             logger.error("RAGServiceの初期化中にエラーが発生しました", error=str(e))
             self.is_enabled = False
 
     def _initialize_rag_service(self):
         """RAGサービスの初期化（シンプル版）"""
         try:
+            print("🔧 RAGサービスの内部初期化を開始します")
             logger.warning("RAGサービスの初期化を開始します")
-            
+
             # データベース接続の初期化を試行
+            print("🔍 データベース接続を試行しています...")
             database_success = self._try_database_connection()
+            print(f"🔍 データベース接続の結果: {database_success}")
             logger.warning(f"データベース接続の結果: {database_success}")
-            
+
             if database_success:
                 # データベース接続が成功した場合、完全RAG機能を初期化
+                print("✅ データベース接続が成功したため、完全RAG機能を初期化します")
                 logger.warning("データベース接続が成功したため、完全RAG機能を初期化します")
                 self._initialize_full_rag()
             else:
                 # データベース接続が失敗した場合、代替RAG機能を初期化
+                print("⚠️ データベース接続が失敗したため、代替RAG機能を初期化します")
                 logger.warning("データベース接続が失敗したため、代替RAG機能を初期化します")
                 self._initialize_fallback_rag()
-            
+
         except Exception as e:
+            print(f"❌ RAGサービスの内部初期化に失敗しました: {e}")
             logger.error("RAGサービスの初期化に失敗しました", error=str(e))
             self.is_enabled = False
 
     def _initialize_fallback_rag(self):
         """代替RAG機能の初期化（pgvectorなし）"""
         try:
+            print("🔧 代替RAG機能の初期化を開始します")
             logger.warning("代替RAG機能の初期化を開始します")
-            
+
             # Gemini APIのみを使用したRAG機能
             if self.gemini_api_key:
+                print("🔑 Gemini APIキーが設定されています")
                 genai.configure(api_key=self.gemini_api_key)
 
                 # モデル一覧の取得をスキップして、直接モデルを使用（高速化）
                 try:
-                    # gemini-2.0-flash-001を直接使用（モデル一覧取得は遅いのでスキップ）
+                    # gemini-2.0-flash-expを直接使用（モデル一覧取得は遅いのでスキップ）
+                    print("🤖 Geminiモデル 'gemini-2.0-flash-exp' を初期化しています...")
                     self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                    print("✅ RAG: gemini-2.0-flash-expを使用します")
                     logger.info("RAG: gemini-2.0-flash-expを使用します")
 
                 except Exception as model_error:
+                    print(f"❌ RAG: モデルの初期化に失敗しました: {model_error}")
                     logger.error("RAG: モデルの初期化に失敗しました", error=str(model_error))
                     self.gemini_model = None
                     logger.warning("RAG: Geminiモデルの初期化に失敗しました")
+                    self.is_enabled = False
                     return
-                
+
+                print("✅ 代替RAG機能（Geminiのみ）を初期化しました")
                 logger.warning("代替RAG機能（Geminiのみ）を初期化しました")
                 self.is_enabled = True
+                print(f"🎯 is_enabled を True に設定しました")
             else:
+                print("❌ Gemini APIキーが設定されていません")
                 logger.warning("Gemini APIキーが設定されていません")
                 logger.warning("代替RAG機能は無効化されます。基本機能のみ利用可能です。")
                 self.is_enabled = False
         except Exception as e:
+            print(f"❌ 代替RAG機能の初期化に失敗しました: {e}")
             logger.error("代替RAG機能の初期化に失敗しました", error=str(e))
             logger.warning("代替RAG機能は無効化されます。基本機能のみ利用可能です。")
             self.is_enabled = False
