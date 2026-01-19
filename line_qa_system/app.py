@@ -940,22 +940,22 @@ def deauthenticate_user():
     """ユーザーの認証を取り消す"""
     try:
         from .optimized_auth_flow import OptimizedAuthFlow
-        
+
         data = request.get_json()
         if not data or 'user_id' not in data:
             return jsonify({
-                "status": "error", 
+                "status": "error",
                 "message": "user_idが必要です"
             }), 400
-        
+
         user_id = data['user_id']
         auth_flow = OptimizedAuthFlow()
-        
+
         # 認証を取り消し
         success = auth_flow.deauthenticate_user(user_id)
-        
+
         if success:
-            logger.info("管理者による認証取り消しが完了しました", 
+            logger.info("管理者による認証取り消しが完了しました",
                        user_id=hash_user_id(user_id))
             return jsonify({
                 "status": "success",
@@ -966,10 +966,65 @@ def deauthenticate_user():
                 "status": "error",
                 "message": f"ユーザー {hash_user_id(user_id)} の認証取り消しに失敗しました"
             }), 400
-            
+
     except Exception as e:
         logger.error("認証取り消しに失敗しました", error=str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/auth-db-status", methods=["GET"])
+@require_admin
+def get_auth_db_status():
+    """認証データベースの状態を確認"""
+    try:
+        from .auth_service import AuthService
+        from .auth_db_service import AuthDBService
+
+        # AuthServiceの状態
+        auth_service = AuthService()
+
+        # AuthDBServiceの直接チェック
+        auth_db = AuthDBService()
+
+        status = {
+            "database_url_set": bool(os.getenv('DATABASE_URL')),
+            "auth_db_enabled": auth_db.is_enabled,
+            "auth_db_health": auth_db.health_check() if auth_db.is_enabled else False,
+            "auth_service_db_enabled": auth_service.auth_db.is_enabled,
+        }
+
+        # データベースからユーザー数を取得
+        if auth_db.is_enabled:
+            try:
+                users = auth_db.get_all_authenticated_users()
+                status["total_users_in_db"] = len(users)
+                status["users"] = [
+                    {
+                        "line_user_id": hash_user_id(user['line_user_id']),
+                        "store_code": user['store_code'],
+                        "staff_id": user['staff_id'],
+                        "staff_name": user['staff_name'],
+                        "auth_time": str(user['auth_time'])
+                    }
+                    for user in users[:10]  # 最大10件
+                ]
+            except Exception as e:
+                status["db_query_error"] = str(e)
+                status["total_users_in_db"] = "error"
+
+        return jsonify({
+            "status": "success",
+            **status
+        })
+
+    except Exception as e:
+        logger.error("認証DB状態の取得に失敗しました", error=str(e))
+        import traceback
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "trace": traceback.format_exc()
+        }), 500
 
 
 @app.errorhandler(400)
