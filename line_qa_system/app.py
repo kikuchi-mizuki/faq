@@ -633,10 +633,35 @@ def reload_cache():
 def rag_status():
     """RAG機能の状態を確認（管理者のみ）"""
     try:
+        # データベース内の文書数を確認
+        document_count = 0
+        embedding_count = 0
+        db_connected = False
+        embedding_model_loaded = False
+
+        if rag_service and rag_service.is_enabled:
+            db_connected = rag_service.db_connection is not None
+            embedding_model_loaded = rag_service.embedding_model is not None
+
+            if rag_service.db_connection:
+                try:
+                    with rag_service.db_connection.cursor() as cursor:
+                        cursor.execute("SELECT COUNT(*) FROM documents;")
+                        document_count = cursor.fetchone()[0]
+
+                        cursor.execute("SELECT COUNT(*) FROM document_embeddings;")
+                        embedding_count = cursor.fetchone()[0]
+                except Exception as db_error:
+                    logger.error("DB文書数の取得に失敗", error=str(db_error))
+
         return jsonify({
             "status": "success",
             "rag_service_initialized": rag_service is not None,
             "rag_service_enabled": rag_service.is_enabled if rag_service else False,
+            "db_connected": db_connected,
+            "embedding_model_loaded": embedding_model_loaded,
+            "document_count": document_count,
+            "embedding_count": embedding_count,
             "document_collector_initialized": document_collector is not None,
             "gemini_api_key_set": bool(os.getenv('GEMINI_API_KEY')),
             "database_url_set": bool(os.getenv('DATABASE_URL')),
