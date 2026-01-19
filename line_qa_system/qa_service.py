@@ -79,17 +79,77 @@ class QAService:
             logger.error("Google Sheets APIの初期化に失敗しました", error=str(e))
             raise
 
+    def _get_sheet_with_retry(self, worksheet_name: str, max_retries: int = 3):
+        """リトライ機能付きでシートを取得"""
+        import random
+
+        for attempt in range(max_retries):
+            try:
+                sheet = self.gc.open_by_key(self.sheet_id).worksheet(worksheet_name)
+                return sheet
+            except Exception as e:
+                error_message = str(e)
+                # 503エラーまたはAPI制限エラーの場合
+                if "503" in error_message or "quota" in error_message.lower() or "rate" in error_message.lower():
+                    if attempt < max_retries - 1:
+                        # エクスポネンシャルバックオフ（ジッター付き）
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            f"Google API エラー (試行 {attempt + 1}/{max_retries}): {wait_time:.2f}秒後にリトライします",
+                            error=error_message,
+                            attempt=attempt + 1,
+                            wait_time=wait_time
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        logger.error("リトライ回数の上限に達しました", error=error_message)
+                        raise
+                else:
+                    # 503以外のエラーは即座に再スロー
+                    raise
+
+    def _get_records_with_retry(self, sheet, max_retries: int = 3):
+        """リトライ機能付きでレコードを取得"""
+        import random
+
+        for attempt in range(max_retries):
+            try:
+                return sheet.get_all_records()
+            except Exception as e:
+                error_message = str(e)
+                # 503エラーまたはAPI制限エラーの場合
+                if "503" in error_message or "quota" in error_message.lower() or "rate" in error_message.lower():
+                    if attempt < max_retries - 1:
+                        # エクスポネンシャルバックオフ（ジッター付き）
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            f"Google API エラー (試行 {attempt + 1}/{max_retries}): {wait_time:.2f}秒後にリトライします",
+                            error=error_message,
+                            attempt=attempt + 1,
+                            wait_time=wait_time
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        logger.error("リトライ回数の上限に達しました", error=error_message)
+                        raise
+                else:
+                    # 503以外のエラーは即座に再スロー
+                    raise
+
     def reload_cache(self):
-        """キャッシュの再読み込み"""
+        """キャッシュの再読み込み（エラー時は既存キャッシュを保持）"""
+        # 既存のキャッシュをバックアップ
+        backup_qa_items = self.qa_items.copy() if self.qa_items else []
+
         try:
             start_time = time.time()
 
-            # スプレッドシートからデータを取得
-            sheet = self.gc.open_by_key(self.sheet_id).worksheet("qa_items")
-            all_values = sheet.get_all_records()
+            # スプレッドシートからデータを取得（リトライ機能付き）
+            sheet = self._get_sheet_with_retry("qa_items")
+            all_values = self._get_records_with_retry(sheet)
 
             # データの変換
-            self.qa_items = []
+            new_qa_items = []
             for row in all_values:
                 try:
                     # 日時の解析
@@ -130,7 +190,7 @@ class QAService:
 
                     # アクティブなアイテムのみ追加
                     if qa_item.is_active:
-                        self.qa_items.append(qa_item)
+                        new_qa_items.append(qa_item)
 
                 except Exception as e:
                     logger.error("行の解析に失敗しました",
@@ -139,6 +199,8 @@ class QAService:
                                 row_data=str(row)[:200])  # 最初の200文字のみ
                     continue
 
+            # 新しいデータが正常に取得できた場合のみ更新
+            self.qa_items = new_qa_items
             self.last_updated = datetime.now()
             self.cache.clear()
 
@@ -150,8 +212,22 @@ class QAService:
             )
 
         except Exception as e:
-            logger.error("キャッシュの再読み込みに失敗しました", error=str(e))
-            raise
+            # エラー時は既存のキャッシュを保持
+            logger.error(
+                "キャッシュの再読み込みに失敗しました。既存のキャッシュを保持します。",
+                error=str(e),
+                cached_items=len(backup_qa_items)
+            )
+            # バックアップから復元
+            if backup_qa_items:
+                self.qa_items = backup_qa_items
+                logger.warning(
+                    f"既存のキャッシュ（{len(backup_qa_items)}件）を使用して継続動作します"
+                )
+            else:
+                # 初回ロード時など、バックアップがない場合は例外を再スロー
+                logger.error("バックアップキャッシュがありません。サービスが利用できない可能性があります")
+                raise
 
     def find_answer(self, query: str) -> SearchResponse:
         """
@@ -493,9 +569,9 @@ class QAService:
             if not self.qa_items:
                 return False
 
-            # スプレッドシートへの接続テスト
-            sheet = self.gc.open_by_key(self.sheet_id).worksheet("qa_items")
-            sheet.get_all_records()
+            # スプレッドシートへの接続テスト（リトライ機能付き）
+            sheet = self._get_sheet_with_retry("qa_items")
+            self._get_records_with_retry(sheet)
 
             return True
 

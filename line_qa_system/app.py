@@ -139,12 +139,12 @@ def initialize_services():
 def start_auto_reload():
     """定期的な自動リロード機能を開始"""
     last_sheet_update = None
-    
+
     def auto_reload_worker():
         nonlocal last_sheet_update
         while True:
             try:
-                time.sleep(300)  # 5分ごと
+                time.sleep(900)  # 15分ごと（API制限を考慮）
                 logger.info("自動リロードチェック開始")
                 
                 # スプレッドシートの最終更新時刻をチェック
@@ -731,7 +731,7 @@ def get_auto_reload_status():
             "status": "success",
             "auto_reload_active": True,
             "last_reload": time.time(),
-            "next_reload_in_seconds": 300,  # 5分後
+            "next_reload_in_seconds": 900,  # 15分後（API制限を考慮）
             "message": "自動リロードが動作中です"
         })
     except Exception as e:
