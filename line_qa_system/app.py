@@ -866,16 +866,235 @@ def collect_documents():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/admin/upload-document", methods=["POST"])
-@require_admin
-def upload_document():
-    """ファイルをアップロードしてRAGに追加（管理者のみ）"""
+@app.route("/upload", methods=["GET"])
+def upload_form():
+    """ファイルアップロードフォーム（誰でもアクセス可能）"""
+    html = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ファイルアップロード - LINE Q&A System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus, input[type="file"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .file-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .loader {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📤 ファイルアップロード</h1>
+        <p class="subtitle">PDF、Excel、テキストファイルをアップロードして、AIに学習させることができます</p>
+
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="title">タイトル（オプション）</label>
+                <input type="text" id="title" name="title" placeholder="例: 製品マニュアル">
+            </div>
+
+            <div class="form-group">
+                <label for="file">ファイルを選択 *</label>
+                <input type="file" id="file" name="file" accept=".pdf,.xlsx,.xls,.txt" required>
+                <div class="file-info">
+                    対応形式: PDF (.pdf), Excel (.xlsx, .xls), テキスト (.txt)
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn">アップロード</button>
+        </form>
+
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px; color: #666;">アップロード中...</p>
+        </div>
+
+        <div class="message" id="message"></div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const loader = document.getElementById('loader');
+            const message = document.getElementById('message');
+            const fileInput = document.getElementById('file');
+            const titleInput = document.getElementById('title');
+
+            // ファイルが選択されているか確認
+            if (!fileInput.files.length) {
+                showMessage('error', 'ファイルを選択してください');
+                return;
+            }
+
+            // UI更新
+            submitBtn.disabled = true;
+            loader.style.display = 'block';
+            message.style.display = 'none';
+
+            // FormDataの作成
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            if (titleInput.value) {
+                formData.append('title', titleInput.value);
+            }
+
+            try {
+                const response = await fetch('/upload-document', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('success', `✅ ${result.message}`);
+                    // フォームをリセット
+                    fileInput.value = '';
+                    titleInput.value = '';
+                } else {
+                    showMessage('error', `❌ ${result.message || 'アップロードに失敗しました'}`);
+                }
+            } catch (error) {
+                showMessage('error', `❌ エラーが発生しました: ${error.message}`);
+            } finally {
+                submitBtn.disabled = false;
+                loader.style.display = 'none';
+            }
+        });
+
+        function showMessage(type, text) {
+            const message = document.getElementById('message');
+            message.className = 'message ' + type;
+            message.textContent = text;
+            message.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+    """
+    return html
+
+
+@app.route("/upload-document", methods=["POST"])
+def upload_document_public():
+    """ファイルをアップロードしてRAGに追加（誰でもアクセス可能）"""
     try:
         # RAGサービスの状態確認
         if not rag_service or not rag_service.is_enabled:
             return jsonify({
                 "status": "error",
-                "message": "RAGサービスが無効です。GEMINI_API_KEYとDATABASE_URLを設定してください。"
+                "message": "RAGサービスが無効です。管理者に連絡してください。"
             }), 500
 
         # ファイルの取得
@@ -1030,6 +1249,14 @@ def upload_document():
     except Exception as e:
         logger.error("ファイルアップロードAPIでエラーが発生しました", error=str(e), exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/admin/upload-document", methods=["POST"])
+@require_admin
+def upload_document_admin():
+    """ファイルをアップロードしてRAGに追加（管理者のみ - 認証あり）"""
+    # 公開エンドポイントと同じ処理を使用
+    return upload_document_public()
 
 
 @app.route("/admin/stats", methods=["GET"])

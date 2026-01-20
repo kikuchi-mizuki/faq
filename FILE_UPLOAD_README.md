@@ -4,6 +4,8 @@
 
 ChatGPTsのように、アップロードしたファイルの内容をAIに学習させて、LINE上で質問に答えられるようにできます。
 
+**✨ 誰でもアップロード可能** - 認証不要で誰でもファイルをアップロードできます！
+
 ## 対応ファイル形式
 
 - **PDF** (.pdf) - pdfplumberで日本語対応
@@ -11,6 +13,17 @@ ChatGPTsのように、アップロードしたファイルの内容をAIに学�
 - **テキスト** (.txt) - UTF-8エンコーディング
 
 ## 使い方
+
+### 方法1: ブラウザからアップロード（最も簡単！）
+
+1. ブラウザで以下のURLにアクセス：
+   ```
+   https://line-qa-system-production.up.railway.app/upload
+   ```
+
+2. ファイルを選択してアップロードボタンをクリック
+
+3. 完了！すぐにLINE上で質問できます
 
 ### 方法1: シェルスクリプトを使う（簡単）
 
@@ -25,11 +38,11 @@ chmod +x upload_file_to_rag.sh
 ./upload_file_to_rag.sh path/to/manual.xlsx '製品マニュアル'
 ```
 
-### 方法2: curlコマンドで直接アップロード
+### 方法3: curlコマンドで直接アップロード
 
 ```bash
-curl -X POST "https://line-qa-system-production.up.railway.app/admin/upload-document" \
-  -H "X-API-Key: admin-faq-2025-xK9mP2qL" \
+# 認証不要でアップロード
+curl -X POST "https://line-qa-system-production.up.railway.app/upload-document" \
   -F "file=@/path/to/your/file.pdf" \
   -F "title=マニュアル"
 ```
