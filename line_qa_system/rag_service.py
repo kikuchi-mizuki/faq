@@ -508,47 +508,49 @@ class RAGService:
         return embedding
 
     def _build_context(self, documents: List[Dict[str, Any]]) -> str:
-        """コンテキストを構築"""
+        """コンテキストを構築（自然な会話用に簡素化）"""
+        # 文書の内容のみを結合（タイトルや類似度などのメタ情報は含めない）
         context_parts = []
-        
-        for i, doc in enumerate(documents, 1):
-            context_parts.append(f"【文書{i}】")
-            context_parts.append(f"タイトル: {doc['title']}")
-            context_parts.append(f"内容: {doc['content']}")
-            context_parts.append(f"類似度: {doc['similarity']:.3f}")
-            context_parts.append("")
-        
-        return "\n".join(context_parts)
+
+        for doc in documents:
+            # 文書の内容のみを追加
+            context_parts.append(doc['content'])
+
+        # 改行で区切って結合
+        return "\n\n".join(context_parts)
 
     def _build_prompt(self, query: str, context: str) -> str:
         """プロンプトを構築"""
         if context:
             return f"""
-質問: {query}
+あなたは親しみやすいカスタマーサポート担当者です。以下の資料を参考にして、質問に自然な会話で答えてください。
 
-以下の情報を参考にして、質問に答えてください：
+【質問】
+{query}
 
+【参考資料】
 {context}
 
-回答は以下の形式でお願いします：
-1. 結論
-2. 手順（必要に応じて）
-3. 参考情報
-
-日本語で、分かりやすく回答してください。
+【回答のルール】
+- 友達に説明するように、自然で親しみやすい口調で答える
+- 「1. 結論」「2. 手順」などの構造化された見出しや番号付けは使わない
+- 簡潔に、わかりやすく説明する
+- 必要に応じて具体例を挙げる
+- 参考資料の情報を基に回答する
+- 回答の最後に注意書きなどは付けない（システム側で自動追加されます）
 """
         else:
             return f"""
-質問: {query}
+あなたは親しみやすいカスタマーサポート担当者です。質問に自然な会話で答えてください。
 
-質問に答えてください。動画制作会社のカスタマーサポートとして、親しみやすく丁寧に回答してください。
+【質問】
+{query}
 
-回答は以下の形式でお願いします：
-1. 結論
-2. 手順（必要に応じて）
-3. 参考情報
-
-日本語で、分かりやすく回答してください。
+【回答のルール】
+- 友達に説明するように、自然で親しみやすい口調で答える
+- 「1. 結論」「2. 手順」などの構造化された見出しや番号付けは使わない
+- 簡潔に、わかりやすく説明する
+- 必要に応じて具体例を挙げる
 """
 
     def health_check(self) -> bool:
