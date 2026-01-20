@@ -2,6 +2,7 @@
 共通ユーティリティ関数
 """
 
+import os
 import hashlib
 import hmac
 import base64
@@ -39,18 +40,24 @@ def verify_line_signature(signature: str, body: bytes, channel_secret: str) -> b
         return False
 
 
-def hash_user_id(user_id: str, salt: str = "line_qa_system_salt") -> str:
+def hash_user_id(user_id: str, salt: str = None) -> str:
     """
     ユーザーIDをハッシュ化（PII最小化）
 
     Args:
         user_id: 元のユーザーID
-        salt: ハッシュ化用のソルト
+        salt: ハッシュ化用のソルト（Noneの場合は環境変数から取得）
 
     Returns:
         ハッシュ化されたユーザーID
     """
     try:
+        # ソルトが指定されていない場合は環境変数から取得
+        if salt is None:
+            # Config.HASH_SALTをインポートして使用
+            from .config import Config
+            salt = Config.HASH_SALT
+
         # ソルト付きでハッシュ化
         hash_obj = hashlib.sha256()
         hash_obj.update((user_id + salt).encode("utf-8"))

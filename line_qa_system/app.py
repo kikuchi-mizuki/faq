@@ -137,6 +137,21 @@ def initialize_services():
         print("🚀 サービスの初期化を開始します...")
         logger.info("サービスの初期化を開始します")
 
+        # 環境変数の検証
+        validation_errors = Config.validate()
+        if validation_errors:
+            logger.error("環境変数の検証エラー", errors=validation_errors)
+            for error in validation_errors:
+                print(f"❌ {error}")
+
+            # 本番環境では致命的エラーとして起動を中止
+            if Config.is_production():
+                raise ValueError(f"環境変数の検証に失敗しました: {', '.join(validation_errors)}")
+            else:
+                # 開発環境では警告のみ
+                print("⚠️ 開発環境のため、警告として続行します")
+                logger.warning("開発環境のため、検証エラーを無視して続行します")
+
         # 本番環境のセキュリティチェック
         Config.check_production_security()
 

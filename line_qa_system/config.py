@@ -54,6 +54,9 @@ class Config:
             if cls.SECRET_KEY == "dev-secret-key-change-in-production":
                 warnings.append("⚠️ SECRET_KEYがデフォルト値です。本番環境では必ず変更してください")
 
+            if cls.HASH_SALT == "line_qa_system_default_salt_change_in_production":
+                warnings.append("⚠️ HASH_SALTがデフォルト値です。本番環境では必ず変更してください")
+
             if warnings:
                 import structlog
                 logger = structlog.get_logger(__name__)
@@ -87,11 +90,15 @@ class Config:
     MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "10"))  # 最大ファイルサイズ（MB）
     UPLOAD_RATE_LIMIT_PER_HOUR = int(os.environ.get("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))  # 1時間あたりの最大アップロード数
 
+    # ハッシュ化設定
+    HASH_SALT = os.environ.get("HASH_SALT", "line_qa_system_default_salt_change_in_production")
+
     @classmethod
     def validate(cls) -> List[str]:
         """設定の妥当性を検証し、問題があればエラーメッセージのリストを返す"""
         errors = []
 
+        # 必須の環境変数
         if not cls.LINE_CHANNEL_SECRET:
             errors.append("LINE_CHANNEL_SECRETが設定されていません")
 
@@ -104,6 +111,11 @@ class Config:
         if not cls.SHEET_ID_QA:
             errors.append("SHEET_ID_QAが設定されていません")
 
+        # 本番環境では管理者APIキーが必須
+        if cls.is_production() and not cls.ADMIN_API_KEY:
+            errors.append("本番環境ではADMIN_API_KEYの設定が必須です")
+
+        # 数値の範囲チェック
         if cls.CACHE_TTL_SECONDS <= 0:
             errors.append("CACHE_TTL_SECONDSは正の整数である必要があります")
 
@@ -112,6 +124,12 @@ class Config:
 
         if cls.MAX_CANDIDATES <= 0:
             errors.append("MAX_CANDIDATESは正の整数である必要があります")
+
+        if cls.MAX_FILE_SIZE_MB <= 0:
+            errors.append("MAX_FILE_SIZE_MBは正の整数である必要があります")
+
+        if cls.UPLOAD_RATE_LIMIT_PER_HOUR <= 0:
+            errors.append("UPLOAD_RATE_LIMIT_PER_HOURは正の整数である必要があります")
 
         return errors
 
