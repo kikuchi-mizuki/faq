@@ -152,14 +152,23 @@ class RAGService:
 
     def _try_database_connection(self):
         """データベース接続を試行（成功/失敗を返す）"""
+        # DATABASE_URLが設定されていない場合は即座にFalseを返す
+        if not self.database_url:
+            print("⚠️ DATABASE_URLが設定されていません。代替RAGモードに切り替えます")
+            logger.warning("DATABASE_URLが設定されていません")
+            return False
+
         try:
-            # タイムアウト設定付きで接続（5秒）
+            # タイムアウト設定付きで接続（10秒に延長）
+            # Railway環境ではネットワーク遅延があるため
+            print("🔌 データベースに接続しています...")
             self.db_connection = psycopg2.connect(
                 self.database_url,
-                connect_timeout=5
+                connect_timeout=10
             )
+            print("✅ データベース接続を確立しました")
             logger.info("データベース接続を確立しました")
-            
+
             # pgvector拡張の確認（簡略版）
             with self.db_connection.cursor() as cursor:
                 # pgvector拡張機能の確認（詳細なチェックはスキップして高速化）
@@ -167,32 +176,50 @@ class RAGService:
                 available_extensions = cursor.fetchall()
 
                 if not available_extensions:
+                    print("⚠️ pgvector拡張機能が利用できません。代替RAGモードに切り替えます")
                     logger.warning("pgvector拡張機能が利用できません。代替RAGモードに切り替えます。")
                     return False
 
                 # pgvector拡張機能の有効化を試行
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
                 self.db_connection.commit()
+                print("✅ pgvector拡張機能を有効化しました")
                 logger.info("pgvector拡張機能を有効化しました")
-            
+
             # テーブルの作成
+            print("📋 データベーステーブルを作成しています...")
             self.create_tables()
+            print("✅ データベーステーブルの作成が完了しました")
             logger.info("データベース接続が確立されました")
             logger.info("データベース接続とpgvectorの両方が成功したためTrueを返します")
             return True
-            
+
         except Exception as e:
-            logger.error("データベース接続に失敗しました", error=str(e))
+            print(f"❌ データベース接続に失敗しました: {e}")
+            logger.error("データベース接続に失敗しました", error=str(e), exc_info=True)
             self.db_connection = None
             return False
 
     def _initialize_full_rag(self):
         """完全RAG機能の初期化"""
         try:
+            # 軽量起動モードの確認（環境変数でRAG機能を完全に無効化可能）
+            rag_lightweight_mode = os.getenv('RAG_LIGHTWEIGHT_MODE', 'false').lower() == 'true'
+
+            if rag_lightweight_mode:
+                print("⚡ RAG軽量モードが有効です。Embeddingモデルの読み込みをスキップします")
+                logger.warning("RAG軽量モード: Embeddingモデルの読み込みをスキップします")
+                # 代替RAG機能に切り替え
+                self._initialize_fallback_rag()
+                return
+
             # Embeddingモデルの初期化
             if SENTENCE_TRANSFORMERS_AVAILABLE and NUMPY_AVAILABLE:
+                print(f"📚 Embeddingモデルを読み込んでいます: {self.embedding_model_name}")
+                print("⚠️ この処理には時間がかかる場合があります...")
                 logger.info(f"Embeddingモデルを読み込んでいます: {self.embedding_model_name}")
                 self.embedding_model = SentenceTransformer(self.embedding_model_name)
+                print("✅ Embeddingモデルの読み込みが完了しました")
                 logger.info("Embeddingモデルの読み込みが完了しました")
             else:
                 logger.warning("sentence-transformersまたはnumpyが利用できません")
