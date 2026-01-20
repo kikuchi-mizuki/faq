@@ -62,6 +62,9 @@ logger = structlog.get_logger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Flaskの最大ファイルサイズを設定
+app.config['MAX_CONTENT_LENGTH'] = Config.MAX_FILE_SIZE_MB * 1024 * 1024
+
 # サービスの初期化（遅延初期化）
 qa_service = None
 line_client = None
@@ -69,6 +72,58 @@ session_service = None
 flow_service = None
 rag_service = None
 document_collector = None
+
+# レート制限用のインメモリキャッシュ（IPアドレス -> アップロード時刻のリスト）
+upload_rate_limiter = {}
+
+def check_upload_rate_limit(ip_address: str) -> bool:
+    """
+    アップロードのレート制限をチェック
+
+    Args:
+        ip_address: クライアントのIPアドレス
+
+    Returns:
+        True: アップロード可能, False: レート制限超過
+    """
+    current_time = time.time()
+    hour_ago = current_time - 3600  # 1時間前
+
+    # 古いエントリをクリーンアップ
+    if ip_address in upload_rate_limiter:
+        upload_rate_limiter[ip_address] = [
+            t for t in upload_rate_limiter[ip_address] if t > hour_ago
+        ]
+    else:
+        upload_rate_limiter[ip_address] = []
+
+    # レート制限チェック
+    if len(upload_rate_limiter[ip_address]) >= Config.UPLOAD_RATE_LIMIT_PER_HOUR:
+        logger.warning(f"レート制限超過: IP={ip_address}, count={len(upload_rate_limiter[ip_address])}")
+        return False
+
+    # アップロード時刻を記録
+    upload_rate_limiter[ip_address].append(current_time)
+    return True
+
+def safe_error_message(error: Exception, default_message: str = "処理中にエラーが発生しました") -> str:
+    """
+    本番環境では汎用的なエラーメッセージを返し、開発環境では詳細を返す
+
+    Args:
+        error: 例外オブジェクト
+        default_message: デフォルトのエラーメッセージ
+
+    Returns:
+        エラーメッセージ文字列
+    """
+    if Config.is_production():
+        # 本番環境では汎用メッセージのみ（詳細はログに記録）
+        logger.error(f"エラー詳細（本番環境）: {str(error)}", exc_info=True)
+        return default_message
+    else:
+        # 開発環境では詳細なエラー情報を返す
+        return f"{default_message}: {str(error)}"
 
 def initialize_services():
     """サービスの初期化（遅延初期化）"""
@@ -81,7 +136,10 @@ def initialize_services():
     try:
         print("🚀 サービスの初期化を開始します...")
         logger.info("サービスの初期化を開始します")
-        
+
+        # 本番環境のセキュリティチェック
+        Config.check_production_security()
+
         # AIServiceの初期化（最優先で行い、他サービスへ注入）
         from .ai_service import AIService
         ai_service = AIService()
@@ -264,21 +322,27 @@ def callback():
     start_time = time.time()
 
     try:
+        # リクエストボディを一度だけ取得（複数回読むとエラーになるため）
+        body_bytes = request.get_data()
+
         # LINE署名の検証
-        if not verify_line_signature(
-            request.headers.get("X-Line-Signature", ""),
-            request.get_data(),
-            app.config["LINE_CHANNEL_SECRET"],
-        ):
-            logger.warning("LINE署名検証に失敗しました")
-            # 署名検証失敗でも200を返す（LINEの要件）
+        signature = request.headers.get("X-Line-Signature", "")
+        if not verify_line_signature(signature, body_bytes, app.config["LINE_CHANNEL_SECRET"]):
+            logger.warning("LINE署名検証に失敗しました",
+                         signature=signature[:20] if signature else "なし")
+            # 署名検証失敗の場合、200を返すが処理はスキップ（セキュリティ対策）
             return jsonify({"status": "ok"})
 
         # リクエストボディの解析
-        body = request.get_json()
-        if not body:
-            logger.warning("リクエストボディが不正です")
+        try:
+            body = json.loads(body_bytes.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning("リクエストボディの解析に失敗しました", error=str(e))
             # 不正なボディでも200を返す
+            return jsonify({"status": "ok"})
+
+        if not body:
+            logger.warning("リクエストボディが空です")
             return jsonify({"status": "ok"})
 
         # イベントの処理
@@ -1091,12 +1155,25 @@ def upload_form():
 def upload_document_public():
     """ファイルをアップロードしてRAGに追加（誰でもアクセス可能）"""
     try:
+        # クライアントIPアドレスを取得（プロキシ経由の場合も考慮）
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ',' in client_ip:
+            client_ip = client_ip.split(',')[0].strip()
+
+        # レート制限チェック
+        if not check_upload_rate_limit(client_ip):
+            logger.warning(f"アップロードレート制限超過: IP={client_ip}")
+            return jsonify({
+                "status": "error",
+                "message": f"アップロード回数の上限に達しました。1時間あたり{Config.UPLOAD_RATE_LIMIT_PER_HOUR}回までです。"
+            }), 429
+
         # RAGサービスの状態確認
         if not rag_service or not rag_service.is_enabled:
             return jsonify({
                 "status": "error",
                 "message": "RAGサービスが無効です。管理者に連絡してください。"
-            }), 500
+            }), 503
 
         # ファイルの取得
         if 'file' not in request.files:
@@ -1111,6 +1188,19 @@ def upload_document_public():
                 "status": "error",
                 "message": "ファイル名が空です"
             }), 400
+
+        # ファイルサイズチェック（Flaskの自動チェックに加えて明示的にチェック）
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+
+        max_size_bytes = Config.MAX_FILE_SIZE_MB * 1024 * 1024
+        if file_size > max_size_bytes:
+            logger.warning(f"ファイルサイズ超過: {file_size} bytes (最大: {max_size_bytes} bytes)")
+            return jsonify({
+                "status": "error",
+                "message": f"ファイルサイズが大きすぎます。最大{Config.MAX_FILE_SIZE_MB}MBまでです。"
+            }), 413
 
         # ファイルタイトルの取得（オプション）
         title = request.form.get('title', file.filename)
@@ -1140,10 +1230,10 @@ def upload_document_public():
                 logger.info(f"PDFファイルを解析しました: {filename}, {len(pdf.pages)}ページ")
 
             except Exception as e:
-                logger.error(f"PDF解析エラー: {e}")
+                error_msg = safe_error_message(e, "PDFファイルの解析に失敗しました")
                 return jsonify({
                     "status": "error",
-                    "message": f"PDF解析エラー: {str(e)}"
+                    "message": error_msg
                 }), 500
 
         elif filename.endswith(('.xlsx', '.xls')):
@@ -1183,10 +1273,10 @@ def upload_document_public():
                 logger.info(f"Excelファイルを解析しました: {filename}, {len(workbook.sheetnames)}シート")
 
             except Exception as e:
-                logger.error(f"Excel解析エラー: {e}")
+                error_msg = safe_error_message(e, "Excelファイルの解析に失敗しました")
                 return jsonify({
                     "status": "error",
-                    "message": f"Excel解析エラー: {str(e)}"
+                    "message": error_msg
                 }), 500
 
         elif filename.endswith('.txt'):
@@ -1195,10 +1285,10 @@ def upload_document_public():
                 content = file.read().decode('utf-8', errors='ignore')
                 logger.info(f"テキストファイルを読み込みました: {filename}")
             except Exception as e:
-                logger.error(f"テキスト読み込みエラー: {e}")
+                error_msg = safe_error_message(e, "テキストファイルの読み込みに失敗しました")
                 return jsonify({
                     "status": "error",
-                    "message": f"テキスト読み込みエラー: {str(e)}"
+                    "message": error_msg
                 }), 500
         else:
             return jsonify({

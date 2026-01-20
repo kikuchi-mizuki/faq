@@ -43,6 +43,23 @@ class Config:
 
     # セキュリティ設定
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+
+    @classmethod
+    def check_production_security(cls):
+        """本番環境のセキュリティ設定をチェック"""
+        if cls.is_production():
+            warnings = []
+
+            # デフォルト値が使用されている場合は警告
+            if cls.SECRET_KEY == "dev-secret-key-change-in-production":
+                warnings.append("⚠️ SECRET_KEYがデフォルト値です。本番環境では必ず変更してください")
+
+            if warnings:
+                import structlog
+                logger = structlog.get_logger(__name__)
+                for warning in warnings:
+                    logger.warning(warning)
+                    print(warning)
     
     # 認証設定
     AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
@@ -65,6 +82,10 @@ class Config:
     # クエリログ設定
     QUERY_LOG_ENABLED = os.environ.get("QUERY_LOG_ENABLED", "true").lower() == "true"
     QUERY_LOG_SHEET = os.environ.get("QUERY_LOG_SHEET", "query_log")
+
+    # ファイルアップロード設定
+    MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "10"))  # 最大ファイルサイズ（MB）
+    UPLOAD_RATE_LIMIT_PER_HOUR = int(os.environ.get("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))  # 1時間あたりの最大アップロード数
 
     @classmethod
     def validate(cls) -> List[str]:
