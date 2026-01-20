@@ -109,8 +109,9 @@ def initialize_services():
             rag_service = RAGService()
             logger.info(f"RAGServiceの初期化完了: is_enabled={rag_service.is_enabled}")
         except Exception as e:
-            logger.error("RAG機能の初期化に失敗しました", error=str(e))
+            logger.error("RAG機能の初期化に失敗しました", error=str(e), exc_info=True)
             logger.info("RAG機能は無効化されています。基本機能のみ利用可能です。")
+            rag_service = None  # 明示的にNoneを設定
         
         flow_service = FlowService(session_service, qa_service, rag_service, ai_service)
         logger.info("FlowServiceの初期化が完了しました")
@@ -123,34 +124,19 @@ def initialize_services():
                 print("📄 DocumentCollectorの初期化が完了しました")
                 logger.info("DocumentCollectorの初期化が完了しました")
 
-                # 起動時に文書を自動収集（バックグラウンド）
-                def initial_collect():
-                    try:
-                        print("📚 起動時の文書収集を開始します")
-                        logger.info("起動時の文書収集を開始します")
-                        time.sleep(5)  # サービス起動完了を待つ
-                        success = document_collector.collect_all_documents()
-                        if success:
-                            print("✅ 起動時の文書収集が完了しました")
-                            logger.info("✅ 起動時の文書収集が完了しました")
-                        else:
-                            print("⚠️ 起動時の文書収集でエラーが発生しました")
-                            logger.warning("⚠️ 起動時の文書収集でエラーが発生しました")
-                    except Exception as e:
-                        print(f"❌ 起動時の文書収集中にエラーが発生しました: {e}")
-                        logger.error("起動時の文書収集中にエラーが発生しました", error=str(e))
+                # 起動時の自動文書収集を無効化（手動トリガーのみ有効）
+                # 理由: Railway起動時のタイムアウトとメモリ制約を考慮
+                print("📚 自動文書収集は無効化されています（/admin/collect-documents で手動実行可能）")
+                logger.info("自動文書収集は無効化されています。管理APIで手動実行してください。")
 
-                initial_thread = threading.Thread(target=initial_collect)
-                initial_thread.daemon = True
-                initial_thread.start()
-                print("🧵 文書収集バックグラウンドスレッドを開始しました（5秒後に実行）")
-                logger.info("文書収集バックグラウンドスレッドを開始しました")
-
-                # 定期的な自動収集を開始（1時間ごと）
-                start_auto_document_collection()
+                # 定期的な自動収集も無効化
+                # start_auto_document_collection()
 
             except Exception as e:
-                logger.error("DocumentCollectorの初期化に失敗しました", error=str(e))
+                logger.error("DocumentCollectorの初期化に失敗しました", error=str(e), exc_info=True)
+                document_collector = None  # 明示的にNoneを設定
+        else:
+            logger.info("RAGサービスが無効なため、DocumentCollectorは初期化されません")
 
         print("✅ 全てのサービスの初期化が完了しました")
         logger.info("全てのサービスの初期化が完了しました")
