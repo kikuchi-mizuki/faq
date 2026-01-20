@@ -866,6 +866,172 @@ def collect_documents():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/admin/upload-document", methods=["POST"])
+@require_admin
+def upload_document():
+    """ファイルをアップロードしてRAGに追加（管理者のみ）"""
+    try:
+        # RAGサービスの状態確認
+        if not rag_service or not rag_service.is_enabled:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスが無効です。GEMINI_API_KEYとDATABASE_URLを設定してください。"
+            }), 500
+
+        # ファイルの取得
+        if 'file' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "ファイルが指定されていません"
+            }), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({
+                "status": "error",
+                "message": "ファイル名が空です"
+            }), 400
+
+        # ファイルタイトルの取得（オプション）
+        title = request.form.get('title', file.filename)
+
+        # ファイルタイプの判定
+        filename = file.filename.lower()
+
+        # ファイルの内容を読み込み
+        content = None
+
+        if filename.endswith('.pdf'):
+            # PDFファイルの処理
+            import io
+            try:
+                import pdfplumber
+                pdf_content = file.read()
+                pdf_file = io.BytesIO(pdf_content)
+                text_parts = []
+
+                with pdfplumber.open(pdf_file) as pdf:
+                    for page_num, page in enumerate(pdf.pages, 1):
+                        text = page.extract_text()
+                        if text:
+                            text_parts.append(f"=== ページ {page_num} ===\n{text}")
+
+                content = "\n\n".join(text_parts)
+                logger.info(f"PDFファイルを解析しました: {filename}, {len(pdf.pages)}ページ")
+
+            except Exception as e:
+                logger.error(f"PDF解析エラー: {e}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"PDF解析エラー: {str(e)}"
+                }), 500
+
+        elif filename.endswith(('.xlsx', '.xls')):
+            # Excelファイルの処理
+            import io
+            try:
+                import openpyxl
+                excel_content = file.read()
+                excel_file = io.BytesIO(excel_content)
+                workbook = openpyxl.load_workbook(excel_file, data_only=True)
+
+                text_parts = []
+                for sheet_name in workbook.sheetnames:
+                    worksheet = workbook[sheet_name]
+                    sheet_text = [f"=== シート: {sheet_name} ==="]
+
+                    # ヘッダー行
+                    headers = []
+                    for cell in worksheet[1]:
+                        if cell.value:
+                            headers.append(str(cell.value))
+
+                    if headers:
+                        sheet_text.append(f"列: {', '.join(headers)}")
+
+                    # データ行
+                    for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), 2):
+                        row_values = [str(val) if val is not None else "" for val in row]
+                        if any(row_values):
+                            row_text = " | ".join([f"{h}={v}" for h, v in zip(headers, row_values) if v])
+                            if row_text:
+                                sheet_text.append(f"行{row_num}: {row_text}")
+
+                    text_parts.append("\n".join(sheet_text))
+
+                content = "\n\n".join(text_parts)
+                logger.info(f"Excelファイルを解析しました: {filename}, {len(workbook.sheetnames)}シート")
+
+            except Exception as e:
+                logger.error(f"Excel解析エラー: {e}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"Excel解析エラー: {str(e)}"
+                }), 500
+
+        elif filename.endswith('.txt'):
+            # テキストファイルの処理
+            try:
+                content = file.read().decode('utf-8', errors='ignore')
+                logger.info(f"テキストファイルを読み込みました: {filename}")
+            except Exception as e:
+                logger.error(f"テキスト読み込みエラー: {e}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"テキスト読み込みエラー: {str(e)}"
+                }), 500
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "対応していないファイル形式です。PDF、Excel、またはテキストファイルをアップロードしてください。"
+            }), 400
+
+        # 内容が空でないかチェック
+        if not content or not content.strip():
+            return jsonify({
+                "status": "error",
+                "message": "ファイルの内容が空です"
+            }), 400
+
+        # RAGサービスに追加
+        try:
+            import hashlib
+            file_hash = hashlib.md5(content.encode()).hexdigest()
+
+            rag_service.add_document(
+                source_type="upload",
+                source_id=f"upload_{file_hash}",
+                title=title,
+                content=content,
+                metadata={
+                    "filename": file.filename,
+                    "uploaded_at": datetime.now().isoformat(),
+                    "file_type": filename.split('.')[-1]
+                }
+            )
+
+            logger.info(f"ファイルをRAGに追加しました: {title}")
+
+            return jsonify({
+                "status": "success",
+                "message": f"ファイル '{title}' をRAGに追加しました",
+                "filename": file.filename,
+                "title": title,
+                "content_length": len(content)
+            })
+
+        except Exception as e:
+            logger.error(f"RAGへの追加エラー: {e}")
+            return jsonify({
+                "status": "error",
+                "message": f"RAGへの追加エラー: {str(e)}"
+            }), 500
+
+    except Exception as e:
+        logger.error("ファイルアップロードAPIでエラーが発生しました", error=str(e), exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/stats", methods=["GET"])
 @require_admin
 def get_stats():
