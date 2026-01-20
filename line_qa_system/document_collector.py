@@ -325,6 +325,10 @@ class DocumentCollector:
 
     def _extract_drive_file_content(self, file: Dict[str, Any]) -> str:
         """Google Driveファイルの内容を抽出"""
+        if not self.drive_service:
+            logger.error(f"Google Driveサービスが初期化されていません: {file['name']}")
+            return ""
+
         try:
             mime_type = file.get('mimeType', '')
 
@@ -360,6 +364,10 @@ class DocumentCollector:
             logger.warning(f"PDF解析がサポートされていません: {file['name']}")
             return ""
 
+        if not self.drive_service:
+            logger.error(f"Google Driveサービスが初期化されていません: {file['name']}")
+            return ""
+
         try:
             # PDFファイルをダウンロード
             request = self.drive_service.files().get_media(fileId=file['id'])
@@ -391,6 +399,10 @@ class DocumentCollector:
         """Excelファイルからテキストを抽出"""
         if not EXCEL_SUPPORT:
             logger.warning(f"Excel解析がサポートされていません: {file['name']}")
+            return ""
+
+        if not self.drive_service:
+            logger.error(f"Google Driveサービスが初期化されていません: {file['name']}")
             return ""
 
         try:
