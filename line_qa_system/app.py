@@ -560,6 +560,16 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                 print(f"🤔 Q&Aに該当なし。RAGで回答を試行します: message='{message_text}'")
                 logger.info("Q&Aに該当なし。RAGで回答を試行", user_id=hashed_user_id, message=message_text)
 
+                # 処理中メッセージを送信（RAG検索は時間がかかるため）
+                if rag_service and rag_service.is_enabled:
+                    try:
+                        line_client.push_message(user_id, "💭 考え中です...")
+                        print(f"💬 処理中メッセージを送信しました")
+                        logger.info("処理中メッセージを送信", user_id=hashed_user_id)
+                    except Exception as e:
+                        print(f"⚠️ 処理中メッセージの送信に失敗: {e}")
+                        logger.warning("処理中メッセージの送信に失敗", error=str(e))
+
                 if rag_service and rag_service.is_enabled:
                     print(f"✅ RAGサービスが有効です")
                     try:
