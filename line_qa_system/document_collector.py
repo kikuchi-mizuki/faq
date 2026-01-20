@@ -18,12 +18,19 @@ from googleapiclient.errors import HttpError
 
 # PDF/Excel解析用ライブラリ（条件付きインポート）
 try:
-    from PyPDF2 import PdfReader
+    import pdfplumber
     PDF_SUPPORT = True
+    PDF_LIBRARY = 'pdfplumber'
 except ImportError:
-    PDF_SUPPORT = False
-    logger = structlog.get_logger(__name__)
-    logger.warning("PyPDF2がインストールされていません。PDF解析機能が無効です。")
+    try:
+        from PyPDF2 import PdfReader
+        PDF_SUPPORT = True
+        PDF_LIBRARY = 'pypdf2'
+    except ImportError:
+        PDF_SUPPORT = False
+        PDF_LIBRARY = None
+        logger = structlog.get_logger(__name__)
+        logger.warning("PDFライブラリがインストールされていません。PDF解析機能が無効です。")
 
 try:
     import openpyxl
@@ -372,23 +379,40 @@ class DocumentCollector:
             # PDFファイルをダウンロード
             request = self.drive_service.files().get_media(fileId=file['id'])
             pdf_content = request.execute()
-
-            # PyPDF2でテキスト抽出
             pdf_file = io.BytesIO(pdf_content)
-            pdf_reader = PdfReader(pdf_file)
 
             text_parts = []
-            for page_num, page in enumerate(pdf_reader.pages, 1):
-                try:
-                    text = page.extract_text()
-                    if text:
-                        text_parts.append(f"=== ページ {page_num} ===\n{text}")
-                except Exception as e:
-                    logger.warning(f"PDFページ {page_num} の抽出に失敗: {file['name']}", error=str(e))
-                    continue
+
+            # pdfplumberを優先的に使用（日本語対応が優れている）
+            if PDF_LIBRARY == 'pdfplumber':
+                logger.info(f"pdfplumberを使用してPDFを解析します: {file['name']}")
+                with pdfplumber.open(pdf_file) as pdf:
+                    for page_num, page in enumerate(pdf.pages, 1):
+                        try:
+                            text = page.extract_text()
+                            if text:
+                                text_parts.append(f"=== ページ {page_num} ===\n{text}")
+                        except Exception as e:
+                            logger.warning(f"PDFページ {page_num} の抽出に失敗: {file['name']}", error=str(e))
+                            continue
+                    logger.info(f"PDFから{len(pdf.pages)}ページのテキストを抽出しました: {file['name']}")
+
+            # PyPDF2をフォールバックとして使用
+            else:
+                logger.info(f"PyPDF2を使用してPDFを解析します: {file['name']}")
+                from PyPDF2 import PdfReader
+                pdf_reader = PdfReader(pdf_file)
+                for page_num, page in enumerate(pdf_reader.pages, 1):
+                    try:
+                        text = page.extract_text()
+                        if text:
+                            text_parts.append(f"=== ページ {page_num} ===\n{text}")
+                    except Exception as e:
+                        logger.warning(f"PDFページ {page_num} の抽出に失敗: {file['name']}", error=str(e))
+                        continue
+                logger.info(f"PDFから{len(pdf_reader.pages)}ページのテキストを抽出しました: {file['name']}")
 
             extracted_text = "\n\n".join(text_parts)
-            logger.info(f"PDFから{len(pdf_reader.pages)}ページのテキストを抽出しました: {file['name']}")
             return extracted_text
 
         except Exception as e:
