@@ -120,24 +120,31 @@ def initialize_services():
         if rag_service and rag_service.is_enabled:
             try:
                 document_collector = DocumentCollector(rag_service)
+                print("📄 DocumentCollectorの初期化が完了しました")
                 logger.info("DocumentCollectorの初期化が完了しました")
 
                 # 起動時に文書を自動収集（バックグラウンド）
                 def initial_collect():
                     try:
+                        print("📚 起動時の文書収集を開始します")
                         logger.info("起動時の文書収集を開始します")
                         time.sleep(5)  # サービス起動完了を待つ
                         success = document_collector.collect_all_documents()
                         if success:
+                            print("✅ 起動時の文書収集が完了しました")
                             logger.info("✅ 起動時の文書収集が完了しました")
                         else:
+                            print("⚠️ 起動時の文書収集でエラーが発生しました")
                             logger.warning("⚠️ 起動時の文書収集でエラーが発生しました")
                     except Exception as e:
+                        print(f"❌ 起動時の文書収集中にエラーが発生しました: {e}")
                         logger.error("起動時の文書収集中にエラーが発生しました", error=str(e))
 
                 initial_thread = threading.Thread(target=initial_collect)
                 initial_thread.daemon = True
                 initial_thread.start()
+                print("🧵 文書収集バックグラウンドスレッドを開始しました（5秒後に実行）")
+                logger.info("文書収集バックグラウンドスレッドを開始しました")
 
                 # 定期的な自動収集を開始（1時間ごと）
                 start_auto_document_collection()

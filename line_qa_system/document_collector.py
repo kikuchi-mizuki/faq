@@ -125,21 +125,24 @@ class DocumentCollector:
     def collect_all_documents(self) -> bool:
         """全ての文書を収集"""
         try:
+            print("📚 文書収集を開始します")
             logger.info("文書収集を開始します")
-            
+
             # Google Sheetsから文書を収集
             self._collect_sheets_documents()
-            
+
             # Google Docsから文書を収集
             self._collect_docs_documents()
-            
+
             # Google Driveから文書を収集
             self._collect_drive_documents()
-            
+
+            print("✅ 文書収集が完了しました")
             logger.info("文書収集が完了しました")
             return True
-            
+
         except Exception as e:
+            print(f"❌ 文書収集中にエラーが発生しました: {e}")
             logger.error("文書収集中にエラーが発生しました", error=str(e))
             return False
 
@@ -249,6 +252,7 @@ class DocumentCollector:
             ).execute()
 
             files = results.get('files', [])
+            print(f"📁 Google Driveファイルを{len(files)}件発見しました")
             logger.info(f"Google Driveファイルを{len(files)}件発見しました")
 
             for file in files:
@@ -271,6 +275,7 @@ class DocumentCollector:
                             }
                         )
 
+                        print(f"✅ Google Driveファイル '{file['name']}' を収集しました")
                         logger.info(f"Google Driveファイル '{file['name']}' を収集しました")
 
                 except Exception as e:
@@ -385,6 +390,7 @@ class DocumentCollector:
 
             # pdfplumberを優先的に使用（日本語対応が優れている）
             if PDF_LIBRARY == 'pdfplumber':
+                print(f"📖 pdfplumberを使用してPDFを解析します: {file['name']}")
                 logger.info(f"pdfplumberを使用してPDFを解析します: {file['name']}")
                 with pdfplumber.open(pdf_file) as pdf:
                     for page_num, page in enumerate(pdf.pages, 1):
@@ -395,6 +401,7 @@ class DocumentCollector:
                         except Exception as e:
                             logger.warning(f"PDFページ {page_num} の抽出に失敗: {file['name']}", error=str(e))
                             continue
+                    print(f"✅ PDFから{len(pdf.pages)}ページのテキストを抽出しました: {file['name']}")
                     logger.info(f"PDFから{len(pdf.pages)}ページのテキストを抽出しました: {file['name']}")
 
             # PyPDF2をフォールバックとして使用
@@ -468,6 +475,7 @@ class DocumentCollector:
                     continue
 
             extracted_text = "\n\n".join(text_parts)
+            print(f"📊 Excelから{len(workbook.sheetnames)}シートのデータを抽出しました: {file['name']}")
             logger.info(f"Excelから{len(workbook.sheetnames)}シートのデータを抽出しました: {file['name']}")
             return extracted_text
 
