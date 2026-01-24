@@ -1987,6 +1987,102 @@ def get_auto_reload_status():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/admin/rag-diagnostic", methods=["GET"])
+@require_admin
+def rag_diagnostic():
+    """RAGサービスの診断（Railway環境で問題を特定するため）"""
+    try:
+        # 環境変数の確認
+        env_check = {
+            "GEMINI_API_KEY": bool(os.getenv('GEMINI_API_KEY')),
+            "DATABASE_URL": bool(os.getenv('DATABASE_URL')),
+            "RAG_LIGHTWEIGHT_MODE": os.getenv('RAG_LIGHTWEIGHT_MODE', 'false'),
+            "SIMILARITY_THRESHOLD": os.getenv('SIMILARITY_THRESHOLD', '0.15'),
+            "EMBEDDING_MODEL": os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2'),
+        }
+
+        # RAGServiceの状態
+        rag_status = {
+            "is_enabled": rag_service.is_enabled,
+            "db_pool_initialized": rag_service.db_pool is not None,
+            "embedding_model_loaded": rag_service.embedding_model is not None,
+            "gemini_model_initialized": rag_service.gemini_model is not None,
+        }
+
+        # 依存関係の確認
+        dependencies = {
+            "sentence_transformers": False,
+            "numpy": False,
+        }
+
+        try:
+            import sentence_transformers
+            dependencies["sentence_transformers"] = True
+        except ImportError:
+            pass
+
+        try:
+            import numpy
+            dependencies["numpy"] = True
+        except ImportError:
+            pass
+
+        # テストクエリで検索（Embeddingモデルがロードされている場合のみ）
+        test_search_results = None
+        if rag_service.embedding_model and rag_service.db_pool:
+            try:
+                results = rag_service.search_similar_documents("配送にはどれくらい時間がかかる？", limit=10)
+                test_search_results = {
+                    "total_results": len(results),
+                    "top_3": [
+                        {
+                            "title": r.get('title', 'N/A'),
+                            "similarity": round(r.get('similarity', 0), 4)
+                        }
+                        for r in results[:3]
+                    ]
+                }
+            except Exception as search_error:
+                test_search_results = {"error": str(search_error)}
+
+        # 診断結果のサマリー
+        diagnosis = "unknown"
+        recommendation = ""
+
+        if rag_status["is_enabled"] and rag_status["embedding_model_loaded"] and rag_status["db_pool_initialized"]:
+            diagnosis = "healthy"
+            recommendation = "RAGシステムは正常に動作しています"
+        elif rag_status["is_enabled"] and not rag_status["embedding_model_loaded"]:
+            diagnosis = "embedding_model_not_loaded"
+            if env_check["RAG_LIGHTWEIGHT_MODE"].lower() == 'true':
+                recommendation = "RAG_LIGHTWEIGHT_MODE=true が設定されています。環境変数を削除してください。"
+            elif not dependencies["sentence_transformers"]:
+                recommendation = "sentence-transformersがインストールされていません。依存関係を確認してください。"
+            else:
+                recommendation = "Embeddingモデルのロードに失敗しています。メモリ不足またはタイムアウトの可能性があります。"
+        elif not rag_status["db_pool_initialized"]:
+            diagnosis = "database_not_connected"
+            recommendation = "データベース接続に失敗しています。DATABASE_URLを確認してください。"
+        else:
+            diagnosis = "rag_disabled"
+            recommendation = "RAG機能が無効化されています。ログを確認してください。"
+
+        return jsonify({
+            "status": "success",
+            "diagnosis": diagnosis,
+            "recommendation": recommendation,
+            "environment_variables": env_check,
+            "rag_status": rag_status,
+            "dependencies": dependencies,
+            "test_search_results": test_search_results,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+    except Exception as e:
+        logger.error("RAG診断に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/authenticated-users", methods=["GET"])
 @require_admin
 def get_authenticated_users():

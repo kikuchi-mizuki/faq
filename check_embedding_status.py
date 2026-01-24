@@ -67,7 +67,7 @@ def check_embedding_status():
         cursor.execute("""
             SELECT
                 d.title,
-                d.content[:100] as content_preview,
+                SUBSTRING(d.content, 1, 100) as content_preview,
                 CASE WHEN de.id IS NOT NULL THEN 'あり' ELSE 'なし' END as embedding
             FROM documents d
             LEFT JOIN document_embeddings de ON d.id = de.document_id
