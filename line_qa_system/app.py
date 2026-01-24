@@ -1315,8 +1315,8 @@ def upload_form():
             <p class="subtitle">ファイルのアップロード・一覧表示・削除ができます</p>
 
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('upload')">📤 アップロード</button>
-                <button class="tab" onclick="switchTab('list')">📋 一覧表示</button>
+                <button class="tab active" onclick="switchTab('upload', event)">📤 アップロード</button>
+                <button class="tab" onclick="switchTab('list', event)">📋 一覧表示</button>
             </div>
 
             <!-- アップロードタブ -->
@@ -1368,7 +1368,7 @@ def upload_form():
 
     <script>
         // タブ切り替え
-        function switchTab(tabName) {
+        function switchTab(tabName, event) {
             // すべてのタブとコンテンツを非アクティブ化
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
