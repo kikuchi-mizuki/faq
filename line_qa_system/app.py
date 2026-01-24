@@ -734,14 +734,51 @@ def health_check():
 
         if qa_healthy:
             print("✅ ヘルスチェック成功")
-            return jsonify({
+
+            # RAG診断情報を追加（debug=trueパラメータの場合のみ）
+            response_data = {
                 "status": "healthy",
                 "timestamp": time.time(),
                 "version": "0.1.0",
                 "qa_service": "ok",
                 "flow_service_loaded": flow_loaded,
                 "ai_service": "ok" if ai_healthy else "disabled"
-            })
+            }
+
+            # debug=true の場合、詳細なRAG診断情報を含める
+            if request.args.get('debug') == 'true':
+                try:
+                    rag_diagnostic = {
+                        "rag_service_initialized": rag_service is not None,
+                        "rag_service_enabled": rag_service.is_enabled if rag_service else False,
+                        "db_connected": rag_service.db_pool is not None if rag_service else False,
+                        "embedding_model_loaded": rag_service.embedding_model is not None if rag_service else False,
+                        "gemini_api_key_set": bool(os.getenv('GEMINI_API_KEY')),
+                        "database_url_set": bool(os.getenv('DATABASE_URL')),
+                        "rag_lightweight_mode": os.getenv('RAG_LIGHTWEIGHT_MODE', 'false'),
+                        "similarity_threshold": os.getenv('SIMILARITY_THRESHOLD', '0.15'),
+                    }
+
+                    # 文書数とEmbedding数をカウント
+                    if rag_service and rag_service.db_pool:
+                        try:
+                            conn = rag_service.get_db_connection()
+                            with conn.cursor() as cursor:
+                                cursor.execute("SELECT COUNT(*) FROM documents WHERE chunk_index >= 0")
+                                doc_count = cursor.fetchone()[0]
+                                cursor.execute("SELECT COUNT(*) FROM document_embeddings")
+                                embedding_count = cursor.fetchone()[0]
+                                rag_diagnostic["document_count"] = doc_count
+                                rag_diagnostic["embedding_count"] = embedding_count
+                            rag_service.return_db_connection(conn)
+                        except Exception as db_error:
+                            rag_diagnostic["db_error"] = str(db_error)
+
+                    response_data["rag_diagnostic"] = rag_diagnostic
+                except Exception as diag_error:
+                    response_data["rag_diagnostic_error"] = str(diag_error)
+
+            return jsonify(response_data)
         else:
             print("❌ ヘルスチェック失敗: QAサービスが不健全")
             return jsonify({
