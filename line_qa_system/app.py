@@ -1335,7 +1335,8 @@ def upload_form():
                         <input type="file" id="file" name="file" accept=".pdf,.xlsx,.xls,.txt" required>
                         <div class="file-info">
                             対応形式: PDF (.pdf), Excel (.xlsx, .xls), テキスト (.txt)<br>
-                            最大サイズ: 10MB
+                            最大サイズ: 5MB<br>
+                            ※ 大きなファイルは分割してアップロードしてください
                         </div>
                     </div>
 
@@ -1587,6 +1588,17 @@ def upload_document_public():
         file.seek(0, os.SEEK_END)
         file_size = file.tell()
         file.seek(0)
+
+        # Railwayのタイムアウト対策: 5MB以下に制限
+        max_size_bytes_strict = 5 * 1024 * 1024  # 5MB
+        file_size_mb = file_size / (1024 * 1024)
+
+        if file_size > max_size_bytes_strict:
+            logger.warning(f"ファイルサイズ超過: {file_size_mb:.2f}MB (最大: 5MB)")
+            return jsonify({
+                "status": "error",
+                "message": f"ファイルサイズが大きすぎます（{file_size_mb:.2f}MB）。最大5MBまでです。大きなファイルは分割してアップロードしてください。"
+            }), 413
 
         max_size_bytes = Config.MAX_FILE_SIZE_MB * 1024 * 1024
         if file_size > max_size_bytes:
