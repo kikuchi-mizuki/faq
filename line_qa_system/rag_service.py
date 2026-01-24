@@ -60,7 +60,7 @@ class RAGService:
             self.database_url = os.getenv('DATABASE_URL')
             self.embedding_model_name = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
             self.vector_dimension = int(os.getenv('VECTOR_DIMENSION', '384'))
-            self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.6'))
+            self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.15'))
             self.gemini_model = None
 
             print(f"✅ GEMINI_API_KEY設定: {'あり' if self.gemini_api_key else 'なし'}")
