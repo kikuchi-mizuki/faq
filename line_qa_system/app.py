@@ -882,6 +882,151 @@ def list_documents():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/documents", methods=["GET"])
+def list_documents_public():
+    """登録されている文書の一覧を取得（公開エンドポイント）"""
+    try:
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_connection:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスまたはDB接続が無効です"
+            }), 503
+
+        with rag_service.db_connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    source_type,
+                    source_id,
+                    title,
+                    COUNT(*) as chunk_count,
+                    MAX(created_at) as last_updated
+                FROM documents
+                GROUP BY source_type, source_id, title
+                ORDER BY last_updated DESC
+                LIMIT 100;
+            """)
+            results = cursor.fetchall()
+
+            documents = []
+            for row in results:
+                documents.append({
+                    "source_type": row[0],
+                    "source_id": row[1],
+                    "title": row[2],
+                    "chunk_count": row[3],
+                    "last_updated": str(row[4])
+                })
+
+            return jsonify({
+                "status": "success",
+                "total_documents": len(documents),
+                "documents": documents
+            })
+
+    except Exception as e:
+        logger.error("文書一覧の取得に失敗しました", error=str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/delete-document", methods=["POST"])
+def delete_document():
+    """文書を削除（公開エンドポイント）"""
+    try:
+        # クライアントIPアドレスを取得
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ',' in client_ip:
+            client_ip = client_ip.split(',')[0].strip()
+
+        # レート制限チェック（削除もアップロードと同じレート制限を使用）
+        if not check_upload_rate_limit(client_ip):
+            logger.warning(f"削除レート制限超過: IP={client_ip}")
+            return jsonify({
+                "status": "error",
+                "message": f"操作回数の上限に達しました。1時間あたり{Config.UPLOAD_RATE_LIMIT_PER_HOUR}回までです。"
+            }), 429
+
+        # RAGサービスの状態確認
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_connection:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスが無効です"
+            }), 503
+
+        # リクエストボディから削除対象を取得
+        data = request.get_json()
+        if not data or 'source_id' not in data:
+            return jsonify({
+                "status": "error",
+                "message": "source_idが必要です"
+            }), 400
+
+        source_id = data['source_id']
+        source_type = data.get('source_type')
+
+        # データベースから削除
+        with rag_service.db_connection.cursor() as cursor:
+            # 削除対象の文書IDを取得
+            if source_type:
+                cursor.execute("""
+                    SELECT id FROM documents
+                    WHERE source_id = %s AND source_type = %s;
+                """, (source_id, source_type))
+            else:
+                cursor.execute("""
+                    SELECT id FROM documents
+                    WHERE source_id = %s;
+                """, (source_id,))
+
+            doc_ids = [row[0] for row in cursor.fetchall()]
+
+            if not doc_ids:
+                return jsonify({
+                    "status": "error",
+                    "message": "指定された文書が見つかりません"
+                }), 404
+
+            # Embeddingを削除
+            cursor.execute("""
+                DELETE FROM document_embeddings
+                WHERE document_id = ANY(%s);
+            """, (doc_ids,))
+            embedding_deleted = cursor.rowcount
+
+            # 文書を削除
+            if source_type:
+                cursor.execute("""
+                    DELETE FROM documents
+                    WHERE source_id = %s AND source_type = %s;
+                """, (source_id, source_type))
+            else:
+                cursor.execute("""
+                    DELETE FROM documents
+                    WHERE source_id = %s;
+                """, (source_id,))
+
+            doc_deleted = cursor.rowcount
+            rag_service.db_connection.commit()
+
+            logger.info(f"文書を削除しました: source_id={source_id}, docs={doc_deleted}, embeddings={embedding_deleted}")
+
+            return jsonify({
+                "status": "success",
+                "message": f"文書を削除しました（{doc_deleted}件の文書、{embedding_deleted}件のEmbedding）",
+                "deleted_documents": doc_deleted,
+                "deleted_embeddings": embedding_deleted
+            })
+
+    except Exception as e:
+        logger.error("文書削除に失敗しました", error=str(e), exc_info=True)
+        # ロールバック
+        if rag_service and rag_service.db_connection:
+            try:
+                rag_service.db_connection.rollback()
+            except:
+                pass
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
@@ -948,42 +1093,77 @@ def collect_documents():
 
 @app.route("/upload", methods=["GET"])
 def upload_form():
-    """ファイルアップロードフォーム（誰でもアクセス可能）"""
+    """ファイルアップロード・管理画面（誰でもアクセス可能）"""
     html = """
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ファイルアップロード - LINE Q&A System</title>
+    <title>ファイル管理 - LINE Q&A System</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             padding: 20px;
         }
         .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             padding: 40px;
-            max-width: 600px;
-            width: 100%;
+            margin-bottom: 30px;
         }
         h1 {
             color: #333;
             margin-bottom: 10px;
             font-size: 28px;
         }
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 22px;
+        }
         .subtitle {
             color: #666;
             margin-bottom: 30px;
             font-size: 14px;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        .tab:hover {
+            color: #667eea;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
         }
         .form-group {
             margin-bottom: 25px;
@@ -1015,13 +1195,12 @@ def upload_form():
             color: #666;
         }
         button {
-            width: 100%;
-            padding: 15px;
+            padding: 12px 24px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
             border-radius: 8px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
@@ -1034,6 +1213,12 @@ def upload_form():
             background: #ccc;
             cursor: not-allowed;
             transform: none;
+        }
+        button.danger {
+            background: linear-gradient(135deg, #f56565 0%, #c53030 100%);
+        }
+        button.danger:hover {
+            box-shadow: 0 10px 20px rgba(245, 101, 101, 0.4);
         }
         .message {
             margin-top: 20px;
@@ -1069,60 +1254,154 @@ def upload_form():
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .documents-list {
+            margin-top: 20px;
+        }
+        .document-item {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: box-shadow 0.2s;
+        }
+        .document-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .document-info {
+            flex: 1;
+        }
+        .document-title {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        .document-meta {
+            font-size: 14px;
+            color: #666;
+        }
+        .document-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        .document-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📤 ファイルアップロード</h1>
-        <p class="subtitle">PDF、Excel、テキストファイルをアップロードして、AIに学習させることができます</p>
+        <div class="card">
+            <h1>📚 ファイル管理</h1>
+            <p class="subtitle">ファイルのアップロード・一覧表示・削除ができます</p>
 
-        <form id="uploadForm">
-            <div class="form-group">
-                <label for="title">タイトル（オプション）</label>
-                <input type="text" id="title" name="title" placeholder="例: 製品マニュアル">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('upload')">📤 アップロード</button>
+                <button class="tab" onclick="switchTab('list')">📋 一覧表示</button>
             </div>
 
-            <div class="form-group">
-                <label for="file">ファイルを選択 *</label>
-                <input type="file" id="file" name="file" accept=".pdf,.xlsx,.xls,.txt" required>
-                <div class="file-info">
-                    対応形式: PDF (.pdf), Excel (.xlsx, .xls), テキスト (.txt)
+            <!-- アップロードタブ -->
+            <div id="upload-tab" class="tab-content active">
+                <form id="uploadForm">
+                    <div class="form-group">
+                        <label for="title">タイトル（オプション）</label>
+                        <input type="text" id="title" name="title" placeholder="例: 製品マニュアル">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="file">ファイルを選択 *</label>
+                        <input type="file" id="file" name="file" accept=".pdf,.xlsx,.xls,.txt" required>
+                        <div class="file-info">
+                            対応形式: PDF (.pdf), Excel (.xlsx, .xls), テキスト (.txt)<br>
+                            最大サイズ: 10MB
+                        </div>
+                    </div>
+
+                    <button type="submit" id="submitBtn">アップロード</button>
+                </form>
+
+                <div class="loader" id="uploadLoader">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 10px; color: #666;">アップロード中...</p>
                 </div>
+
+                <div class="message" id="uploadMessage"></div>
             </div>
 
-            <button type="submit" id="submitBtn">アップロード</button>
-        </form>
+            <!-- 一覧表示タブ -->
+            <div id="list-tab" class="tab-content">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>登録されているファイル</h2>
+                    <button onclick="loadDocuments()">🔄 更新</button>
+                </div>
 
-        <div class="loader" id="loader">
-            <div class="spinner"></div>
-            <p style="margin-top: 10px; color: #666;">アップロード中...</p>
+                <div class="loader" id="listLoader">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 10px; color: #666;">読み込み中...</p>
+                </div>
+
+                <div class="message" id="listMessage"></div>
+
+                <div id="documentsList" class="documents-list"></div>
+            </div>
         </div>
-
-        <div class="message" id="message"></div>
     </div>
 
     <script>
+        // タブ切り替え
+        function switchTab(tabName) {
+            // すべてのタブとコンテンツを非アクティブ化
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            // 選択されたタブをアクティブ化
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+
+            // 一覧タブに切り替えたら文書を読み込む
+            if (tabName === 'list') {
+                loadDocuments();
+            }
+        }
+
+        // ファイルアップロード
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const submitBtn = document.getElementById('submitBtn');
-            const loader = document.getElementById('loader');
-            const message = document.getElementById('message');
+            const loader = document.getElementById('uploadLoader');
+            const message = document.getElementById('uploadMessage');
             const fileInput = document.getElementById('file');
             const titleInput = document.getElementById('title');
 
-            // ファイルが選択されているか確認
             if (!fileInput.files.length) {
-                showMessage('error', 'ファイルを選択してください');
+                showMessage('uploadMessage', 'error', 'ファイルを選択してください');
                 return;
             }
 
-            // UI更新
             submitBtn.disabled = true;
             loader.style.display = 'block';
             message.style.display = 'none';
 
-            // FormDataの作成
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
             if (titleInput.value) {
@@ -1138,23 +1417,115 @@ def upload_form():
                 const result = await response.json();
 
                 if (response.ok) {
-                    showMessage('success', `✅ ${result.message}`);
-                    // フォームをリセット
+                    showMessage('uploadMessage', 'success', `✅ ${result.message}`);
                     fileInput.value = '';
                     titleInput.value = '';
                 } else {
-                    showMessage('error', `❌ ${result.message || 'アップロードに失敗しました'}`);
+                    showMessage('uploadMessage', 'error', `❌ ${result.message || 'アップロードに失敗しました'}`);
                 }
             } catch (error) {
-                showMessage('error', `❌ エラーが発生しました: ${error.message}`);
+                showMessage('uploadMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
             } finally {
                 submitBtn.disabled = false;
                 loader.style.display = 'none';
             }
         });
 
-        function showMessage(type, text) {
-            const message = document.getElementById('message');
+        // 文書一覧を読み込む
+        async function loadDocuments() {
+            const loader = document.getElementById('listLoader');
+            const message = document.getElementById('listMessage');
+            const list = document.getElementById('documentsList');
+
+            loader.style.display = 'block';
+            message.style.display = 'none';
+            list.innerHTML = '';
+
+            try {
+                const response = await fetch('/documents');
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    if (result.documents.length === 0) {
+                        list.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📭</div>
+                                <p>まだファイルがアップロードされていません</p>
+                            </div>
+                        `;
+                    } else {
+                        list.innerHTML = result.documents.map(doc => `
+                            <div class="document-item">
+                                <div class="document-info">
+                                    <div class="document-title">
+                                        <span class="document-badge">${doc.source_type}</span>
+                                        ${doc.title}
+                                    </div>
+                                    <div class="document-meta">
+                                        ${doc.chunk_count}チャンク | 最終更新: ${new Date(doc.last_updated).toLocaleString('ja-JP')}
+                                    </div>
+                                </div>
+                                <div class="document-actions">
+                                    <button class="danger" onclick="deleteDocument('${doc.source_id}', '${doc.source_type}')">
+                                        🗑️ 削除
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    showMessage('listMessage', 'error', `❌ ${result.message || '読み込みに失敗しました'}`);
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        // 文書を削除
+        async function deleteDocument(sourceId, sourceType) {
+            if (!confirm('本当に削除しますか？この操作は取り消せません。')) {
+                return;
+            }
+
+            const loader = document.getElementById('listLoader');
+            const message = document.getElementById('listMessage');
+
+            loader.style.display = 'block';
+            message.style.display = 'none';
+
+            try {
+                const response = await fetch('/delete-document', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        source_id: sourceId,
+                        source_type: sourceType
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('listMessage', 'success', `✅ ${result.message}`);
+                    // 一覧を再読み込み
+                    setTimeout(() => loadDocuments(), 1000);
+                } else {
+                    showMessage('listMessage', 'error', `❌ ${result.message || '削除に失敗しました'}`);
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        // メッセージ表示
+        function showMessage(elementId, type, text) {
+            const message = document.getElementById(elementId);
             message.className = 'message ' + type;
             message.textContent = text;
             message.style.display = 'block';
