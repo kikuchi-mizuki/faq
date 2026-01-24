@@ -1027,6 +1027,61 @@ def delete_document():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/generate-embeddings", methods=["POST"])
+def generate_embeddings_for_pending():
+    """Embedding未生成の文書に対してEmbeddingを生成（誰でもアクセス可能）"""
+    try:
+        if not rag_service or not rag_service.is_enabled:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスが無効です"
+            }), 503
+
+        # Embedding未生成の文書を検索
+        with rag_service.db_connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT DISTINCT d.id, d.content
+                FROM documents d
+                LEFT JOIN document_embeddings e ON d.id = e.document_id
+                WHERE e.document_id IS NULL
+                LIMIT 100;
+            """)
+            pending_docs = cursor.fetchall()
+
+        if not pending_docs:
+            return jsonify({
+                "status": "success",
+                "message": "Embedding生成が必要な文書はありません",
+                "generated_count": 0
+            })
+
+        # Embeddingを生成
+        generated_count = 0
+        for doc_id, content in pending_docs:
+            try:
+                embedding = rag_service._generate_embedding(content)
+                with rag_service.db_connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO document_embeddings (document_id, embedding) VALUES (%s, %s)",
+                        (doc_id, embedding)
+                    )
+                rag_service.db_connection.commit()
+                generated_count += 1
+            except Exception as e:
+                logger.error(f"Embedding生成エラー (doc_id={doc_id})", error=str(e))
+                continue
+
+        return jsonify({
+            "status": "success",
+            "message": f"{generated_count}個の文書のEmbeddingを生成しました",
+            "generated_count": generated_count
+        })
+
+    except Exception as e:
+        logger.error("Embedding生成に失敗しました", error=str(e), exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
@@ -1355,7 +1410,10 @@ def upload_form():
             <div id="list-tab" class="tab-content">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h2>登録されているファイル</h2>
-                    <button onclick="loadDocuments()">🔄 更新</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="generateEmbeddings()">🔧 Embedding生成</button>
+                        <button onclick="loadDocuments()">🔄 更新</button>
+                    </div>
                 </div>
 
                 <div class="loader" id="listLoader">
@@ -1519,6 +1577,38 @@ def upload_form():
                     setTimeout(() => loadDocuments(), 1000);
                 } else {
                     showMessage('listMessage', 'error', `❌ ${result.message || '削除に失敗しました'}`);
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        // Embedding生成
+        async function generateEmbeddings() {
+            const loader = document.getElementById('listLoader');
+            const message = document.getElementById('listMessage');
+
+            loader.style.display = 'block';
+            message.style.display = 'none';
+
+            try {
+                const response = await fetch('/generate-embeddings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('listMessage', 'success', `✅ ${result.message}`);
+                    // 一覧を再読み込み
+                    setTimeout(() => loadDocuments(), 1000);
+                } else {
+                    showMessage('listMessage', 'error', `❌ ${result.message || 'Embedding生成に失敗しました'}`);
                 }
             } catch (error) {
                 showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
@@ -1735,10 +1825,14 @@ def upload_document_public():
 
             logger.info(f"RAGへの追加を開始: {title}, サイズ: {content_size_mb:.2f}MB")
 
-            # タイムアウト対策: すべてのファイルでEmbeddingを後で生成
-            # これにより即座にレスポンスを返せる
-            generate_embeddings_now = False
-            logger.info(f"Embeddingは後で生成します（タイムアウト対策）")
+            # タイムアウト対策: ファイルサイズに応じてEmbedding生成を判断
+            # 小さいファイル（1MB未満）は即座に生成、大きいファイルは後で生成
+            if content_size_mb < 1.0:
+                generate_embeddings_now = True
+                logger.info(f"小さいファイル（{content_size_mb:.2f}MB）のため、Embeddingを即座に生成します")
+            else:
+                generate_embeddings_now = False
+                logger.info(f"大きいファイル（{content_size_mb:.2f}MB）のため、Embeddingは後で生成します（タイムアウト対策）")
 
             success = rag_service.add_document(
                 source_type="upload",
