@@ -1829,14 +1829,10 @@ def upload_document_public():
 
             logger.info(f"RAGへの追加を開始: {title}, サイズ: {content_size_mb:.2f}MB")
 
-            # タイムアウト対策: ファイルサイズに応じてEmbedding生成を判断
-            # 小さいファイル（1MB未満）は即座に生成、大きいファイルは後で生成
-            if content_size_mb < 1.0:
-                generate_embeddings_now = True
-                logger.info(f"小さいファイル（{content_size_mb:.2f}MB）のため、Embeddingを即座に生成します")
-            else:
-                generate_embeddings_now = False
-                logger.info(f"大きいファイル（{content_size_mb:.2f}MB）のため、Embeddingは後で生成します（タイムアウト対策）")
+            # タイムアウト対策: Embedding生成は常に後で実行（Railway 30秒制限対策）
+            # アップロード後に /generate-embeddings エンドポイントで生成してください
+            generate_embeddings_now = False
+            logger.info(f"Embedding生成は後で実行します（サイズ: {content_size_mb:.2f}MB、タイムアウト対策）")
 
             success = rag_service.add_document(
                 source_type="upload",
@@ -1863,11 +1859,13 @@ def upload_document_public():
 
             return jsonify({
                 "status": "success",
-                "message": f"ファイル '{title}' をRAGに追加しました",
+                "message": f"ファイル '{title}' をRAGに追加しました。「Embedding生成」ボタンをクリックして検索可能にしてください。",
                 "filename": file.filename,
                 "title": title,
                 "content_length": len(content),
-                "content_size_mb": round(content_size_mb, 2)
+                "content_size_mb": round(content_size_mb, 2),
+                "embeddings_generated": False,
+                "next_step": "画面の「Embedding生成」ボタンをクリックしてください"
             })
 
         except Exception as e:
