@@ -462,7 +462,7 @@ class RAGService:
                 # 埋め込みベクトルを文字列形式に変換
                 embedding_str = '[' + ','.join(map(str, query_embedding.tolist())) + ']'
 
-                # 類似度検索（通常チャンクのみ対象 - is_full_text_chunk=false）
+                # 類似度検索（通常チャンクのみ対象 - chunk_index >= 0）
                 print(f"🔍 類似度閾値: {self.similarity_threshold}")
                 cursor.execute("""
                     SELECT
@@ -476,7 +476,7 @@ class RAGService:
                         1 - (de.embedding <=> %s::vector) as similarity
                     FROM documents d
                     JOIN document_embeddings de ON d.id = de.document_id
-                    WHERE d.is_full_text_chunk = FALSE
+                    WHERE d.chunk_index >= 0
                     ORDER BY similarity DESC
                     LIMIT 10;
                 """, (embedding_str,))
