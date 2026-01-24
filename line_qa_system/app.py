@@ -849,7 +849,7 @@ def list_documents():
                     COUNT(*) as chunk_count,
                     MAX(created_at) as last_updated
                 FROM documents
-                WHERE is_full_text_chunk = FALSE OR is_full_text_chunk IS NULL
+                WHERE chunk_index >= 0
                 GROUP BY source_type, source_id, title
                 ORDER BY last_updated DESC
                 LIMIT 50;
@@ -905,7 +905,7 @@ def list_documents_public():
                     COUNT(*) as chunk_count,
                     MAX(created_at) as last_updated
                 FROM documents
-                WHERE is_full_text_chunk = FALSE OR is_full_text_chunk IS NULL
+                WHERE chunk_index >= 0
                 GROUP BY source_type, source_id, title
                 ORDER BY last_updated DESC
                 LIMIT 100;
