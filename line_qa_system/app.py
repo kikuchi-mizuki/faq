@@ -639,7 +639,7 @@ def process_text_message(event: Dict[str, Any], start_time: float):
                     try:
                         # RAGで類似文書を検索
                         print(f"🔍 RAGで類似文書を検索しています...")
-                        similar_docs = rag_service.search_similar_documents(message_text, limit=3)
+                        similar_docs = rag_service.search_similar_documents(message_text, limit=10)
                         print(f"🔍 検索結果: {len(similar_docs)}件の類似文書")
 
                         if similar_docs:

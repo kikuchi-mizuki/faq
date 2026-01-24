@@ -433,7 +433,7 @@ class RAGService:
             if conn and self.db_pool:
                 self.db_pool.putconn(conn)
 
-    def search_similar_documents(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
+    def search_similar_documents(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """類似文書を検索"""
         print(f"🔍 search_similar_documents 呼び出し: query='{query}'")
         logger.info(f"search_similar_documents 呼び出し: query='{query}'")
