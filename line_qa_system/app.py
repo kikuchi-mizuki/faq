@@ -1037,13 +1037,14 @@ def generate_embeddings_for_pending():
                 "message": "RAGサービスが無効です"
             }), 503
 
-        # Embedding未生成の文書を検索
+        # Embedding未生成の文書を検索（全文レコードは除外）
         with rag_service.db_connection.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT d.id, d.content
                 FROM documents d
                 LEFT JOIN document_embeddings e ON d.id = e.document_id
                 WHERE e.document_id IS NULL
+                  AND d.is_full_text_chunk = FALSE
                 LIMIT 100;
             """)
             pending_docs = cursor.fetchall()
