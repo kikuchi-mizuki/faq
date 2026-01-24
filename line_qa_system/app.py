@@ -1629,9 +1629,11 @@ def upload_document_public():
                 import openpyxl
                 excel_content = file.read()
                 excel_file = io.BytesIO(excel_content)
-                workbook = openpyxl.load_workbook(excel_file, data_only=True)
+                workbook = openpyxl.load_workbook(excel_file, data_only=True, read_only=True)
 
                 text_parts = []
+                MAX_ROWS_PER_SHEET = 1000  # 1シートあたりの最大行数
+
                 for sheet_name in workbook.sheetnames:
                     worksheet = workbook[sheet_name]
                     sheet_text = [f"=== シート: {sheet_name} ==="]
@@ -1645,13 +1647,19 @@ def upload_document_public():
                     if headers:
                         sheet_text.append(f"列: {', '.join(headers)}")
 
-                    # データ行
+                    # データ行（最大1000行まで）
+                    row_count = 0
                     for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), 2):
+                        if row_count >= MAX_ROWS_PER_SHEET:
+                            sheet_text.append(f"... (残りの行は省略されました。最大{MAX_ROWS_PER_SHEET}行まで)")
+                            break
+
                         row_values = [str(val) if val is not None else "" for val in row]
                         if any(row_values):
                             row_text = " | ".join([f"{h}={v}" for h, v in zip(headers, row_values) if v])
                             if row_text:
                                 sheet_text.append(f"行{row_num}: {row_text}")
+                                row_count += 1
 
                     text_parts.append("\n".join(sheet_text))
 
@@ -1689,10 +1697,17 @@ def upload_document_public():
                 "message": "ファイルの内容が空です"
             }), 400
 
+        # 内容のサイズチェック（大きすぎる場合は警告）
+        content_size_mb = len(content.encode('utf-8')) / (1024 * 1024)
+        if content_size_mb > 5:
+            logger.warning(f"大きなファイルをアップロード中: {content_size_mb:.2f}MB")
+
         # RAGサービスに追加
         try:
             import hashlib
             file_hash = hashlib.md5(content.encode()).hexdigest()
+
+            logger.info(f"RAGへの追加を開始: {title}, サイズ: {content_size_mb:.2f}MB")
 
             rag_service.add_document(
                 source_type="upload",
@@ -1702,7 +1717,8 @@ def upload_document_public():
                 metadata={
                     "filename": file.filename,
                     "uploaded_at": datetime.now().isoformat(),
-                    "file_type": filename.split('.')[-1]
+                    "file_type": filename.split('.')[-1],
+                    "content_size_mb": round(content_size_mb, 2)
                 }
             )
 
@@ -1713,14 +1729,16 @@ def upload_document_public():
                 "message": f"ファイル '{title}' をRAGに追加しました",
                 "filename": file.filename,
                 "title": title,
-                "content_length": len(content)
+                "content_length": len(content),
+                "content_size_mb": round(content_size_mb, 2)
             })
 
         except Exception as e:
-            logger.error(f"RAGへの追加エラー: {e}")
+            logger.error(f"RAGへの追加エラー: {e}", exc_info=True)
+            error_msg = safe_error_message(e, "ファイルの処理中にエラーが発生しました")
             return jsonify({
                 "status": "error",
-                "message": f"RAGへの追加エラー: {str(e)}"
+                "message": error_msg
             }), 500
 
     except Exception as e:
