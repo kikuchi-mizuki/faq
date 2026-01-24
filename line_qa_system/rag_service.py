@@ -179,47 +179,51 @@ class RAGService:
                 dsn=self.database_url,
                 connect_timeout=10
             )
-            # 初期接続テスト用
-            self.db_connection = self.db_pool.getconn()
             print("✅ データベース接続プールを作成しました")
             logger.info("データベース接続プールを作成しました")
 
-            # pgvector拡張の確認（簡略版）
-            with self.db_connection.cursor() as cursor:
-                # pgvector拡張機能の確認（詳細なチェックはスキップして高速化）
-                cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
-                available_extensions = cursor.fetchall()
+            # 初期接続テスト用
+            test_conn = self.db_pool.getconn()
+            try:
+                # pgvector拡張の確認（簡略版）
+                with test_conn.cursor() as cursor:
+                    # pgvector拡張機能の確認（詳細なチェックはスキップして高速化）
+                    cursor.execute("SELECT * FROM pg_available_extensions WHERE name = 'vector';")
+                    available_extensions = cursor.fetchall()
 
-                if not available_extensions:
-                    print("⚠️ pgvector拡張機能が利用できません。代替RAGモードに切り替えます")
-                    logger.warning("pgvector拡張機能が利用できません。代替RAGモードに切り替えます。")
-                    return False
+                    if not available_extensions:
+                        print("⚠️ pgvector拡張機能が利用できません。代替RAGモードに切り替えます")
+                        logger.warning("pgvector拡張機能が利用できません。代替RAGモードに切り替えます。")
+                        return False
 
-                # pgvector拡張機能の有効化を試行
-                cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-                self.db_connection.commit()
-                print("✅ pgvector拡張機能を有効化しました")
-                logger.info("pgvector拡張機能を有効化しました")
+                    # pgvector拡張機能の有効化を試行
+                    cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+                    test_conn.commit()
+                    print("✅ pgvector拡張機能を有効化しました")
+                    logger.info("pgvector拡張機能を有効化しました")
 
-            # テーブルの作成
-            print("📋 データベーステーブルを作成しています...")
-            self.create_tables()
-            print("✅ データベーステーブルの作成が完了しました")
-            logger.info("データベース接続が確立されました")
-            logger.info("データベース接続とpgvectorの両方が成功したためTrueを返します")
+                # テーブルの作成
+                print("📋 データベーステーブルを作成しています...")
+                self.create_tables()
+                print("✅ データベーステーブルの作成が完了しました")
+                logger.info("データベース接続が確立されました")
+                logger.info("データベース接続とpgvectorの両方が成功したためTrueを返します")
 
-            # 初期接続を返却
-            self.db_pool.putconn(self.db_connection)
-            self.db_connection = None
+                return True
 
-            return True
+            finally:
+                # テスト接続を返却
+                if test_conn:
+                    self.db_pool.putconn(test_conn)
 
         except Exception as e:
             print(f"❌ データベース接続に失敗しました: {e}")
             logger.error("データベース接続に失敗しました", error=str(e), exc_info=True)
-            if self.db_connection and self.db_pool:
-                self.db_pool.putconn(self.db_connection)
-            self.db_connection = None
+            if self.db_pool:
+                try:
+                    self.db_pool.closeall()
+                except:
+                    pass
             self.db_pool = None
             return False
 
@@ -291,12 +295,14 @@ class RAGService:
 
     def create_tables(self):
         """必要なテーブルを作成"""
-        if not self.db_connection:
-            logger.error("データベース接続がありません")
+        if not self.db_pool:
+            logger.error("データベース接続プールがありません")
             return False
-        
+
+        # 接続プールから接続を取得
+        conn = self.db_pool.getconn()
         try:
-            with self.db_connection.cursor() as cursor:
+            with conn.cursor() as cursor:
                 # 文書テーブル
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS documents (
@@ -324,17 +330,21 @@ class RAGService:
                 
                 # インデックスの作成
                 cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_document_embeddings_vector 
+                    CREATE INDEX IF NOT EXISTS idx_document_embeddings_vector
                     ON document_embeddings USING ivfflat (embedding vector_cosine_ops);
                 """)
-                
-                self.db_connection.commit()
+
+                conn.commit()
                 logger.info("データベーステーブルを作成しました")
                 return True
-                
+
         except Exception as e:
             logger.error("テーブル作成中にエラーが発生しました", error=str(e))
             return False
+        finally:
+            # 接続をプールに返却
+            if conn and self.db_pool:
+                self.db_pool.putconn(conn)
 
     def add_document(self, source_type: str, source_id: str, title: str, content: str, metadata: Dict[str, Any] = None, generate_embeddings: bool = True) -> bool:
         """文書を追加
