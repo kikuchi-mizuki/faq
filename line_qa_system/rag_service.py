@@ -636,6 +636,17 @@ class RAGService:
 - 必要に応じて具体例を挙げる
 """
 
+    def get_db_connection(self):
+        """接続プールから安全にDB接続を取得するヘルパーメソッド"""
+        if not self.db_pool:
+            raise ValueError("データベース接続プールが初期化されていません")
+        return self.db_pool.getconn()
+
+    def return_db_connection(self, conn):
+        """接続をプールに返却するヘルパーメソッド"""
+        if conn and self.db_pool:
+            self.db_pool.putconn(conn)
+
     def health_check(self) -> bool:
         """RAGサービスの健全性チェック"""
         return self.is_enabled and self.gemini_model is not None

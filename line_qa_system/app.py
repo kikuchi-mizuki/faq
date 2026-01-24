@@ -50,15 +50,6 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
-# 認証システム用スプレッドシートの自動作成
-# 注意: 初回セットアップ時のみ必要。既にシートが作成されている場合はコメントアウト推奨
-# try:
-#     from auto_setup import auto_setup_auth_sheets
-#     auto_setup_auth_sheets()
-#     logger.info("認証システム用スプレッドシートの自動作成が完了しました")
-# except Exception as e:
-#     logger.warning("認証システム用スプレッドシートの自動作成に失敗しました", error=str(e))
-
 app = Flask(__name__)
 app.config.from_object(Config)
 
@@ -839,14 +830,17 @@ def rag_status():
 @require_admin
 def list_documents():
     """登録されている文書の一覧を取得（管理者のみ）"""
+    conn = None
     try:
-        if not rag_service or not rag_service.is_enabled or not rag_service.db_connection:
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
             return jsonify({
                 "status": "error",
                 "message": "RAGサービスまたはDB接続が無効です"
             }), 500
 
-        with rag_service.db_connection.cursor() as cursor:
+        # 接続プールから接続を取得
+        conn = rag_service.get_db_connection()
+        with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT
                     source_type,
@@ -855,6 +849,7 @@ def list_documents():
                     COUNT(*) as chunk_count,
                     MAX(created_at) as last_updated
                 FROM documents
+                WHERE is_full_text_chunk = FALSE OR is_full_text_chunk IS NULL
                 GROUP BY source_type, source_id, title
                 ORDER BY last_updated DESC
                 LIMIT 50;
@@ -879,20 +874,29 @@ def list_documents():
 
     except Exception as e:
         logger.error("文書一覧の取得に失敗しました", error=str(e))
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "文書一覧の取得に失敗しました")
+        }), 500
+    finally:
+        if conn:
+            rag_service.return_db_connection(conn)
 
 
 @app.route("/documents", methods=["GET"])
 def list_documents_public():
     """登録されている文書の一覧を取得（公開エンドポイント）"""
+    conn = None
     try:
-        if not rag_service or not rag_service.is_enabled or not rag_service.db_connection:
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
             return jsonify({
                 "status": "error",
                 "message": "RAGサービスまたはDB接続が無効です"
             }), 503
 
-        with rag_service.db_connection.cursor() as cursor:
+        # 接続プールから接続を取得
+        conn = rag_service.get_db_connection()
+        with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT
                     source_type,
@@ -901,6 +905,7 @@ def list_documents_public():
                     COUNT(*) as chunk_count,
                     MAX(created_at) as last_updated
                 FROM documents
+                WHERE is_full_text_chunk = FALSE OR is_full_text_chunk IS NULL
                 GROUP BY source_type, source_id, title
                 ORDER BY last_updated DESC
                 LIMIT 100;
@@ -925,12 +930,19 @@ def list_documents_public():
 
     except Exception as e:
         logger.error("文書一覧の取得に失敗しました", error=str(e))
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "文書一覧の取得に失敗しました")
+        }), 500
+    finally:
+        if conn:
+            rag_service.return_db_connection(conn)
 
 
 @app.route("/delete-document", methods=["POST"])
 def delete_document():
     """文書を削除（公開エンドポイント）"""
+    conn = None
     try:
         # クライアントIPアドレスを取得
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -946,7 +958,7 @@ def delete_document():
             }), 429
 
         # RAGサービスの状態確認
-        if not rag_service or not rag_service.is_enabled or not rag_service.db_connection:
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
             return jsonify({
                 "status": "error",
                 "message": "RAGサービスが無効です"
@@ -963,8 +975,11 @@ def delete_document():
         source_id = data['source_id']
         source_type = data.get('source_type')
 
+        # 接続プールから接続を取得
+        conn = rag_service.get_db_connection()
+
         # データベースから削除
-        with rag_service.db_connection.cursor() as cursor:
+        with conn.cursor() as cursor:
             # 削除対象の文書IDを取得
             if source_type:
                 cursor.execute("""
@@ -1005,7 +1020,7 @@ def delete_document():
                 """, (source_id,))
 
             doc_deleted = cursor.rowcount
-            rag_service.db_connection.commit()
+            conn.commit()
 
             logger.info(f"文書を削除しました: source_id={source_id}, docs={doc_deleted}, embeddings={embedding_deleted}")
 
@@ -1019,12 +1034,18 @@ def delete_document():
     except Exception as e:
         logger.error("文書削除に失敗しました", error=str(e), exc_info=True)
         # ロールバック
-        if rag_service and rag_service.db_connection:
+        if conn:
             try:
-                rag_service.db_connection.rollback()
+                conn.rollback()
             except:
                 pass
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "文書削除に失敗しました")
+        }), 500
+    finally:
+        if conn:
+            rag_service.return_db_connection(conn)
 
 
 @app.route("/generate-embeddings", methods=["POST"])
