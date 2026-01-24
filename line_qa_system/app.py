@@ -1071,21 +1071,30 @@ def delete_document():
 @app.route("/generate-embeddings", methods=["POST"])
 def generate_embeddings_for_pending():
     """Embedding未生成の文書に対してEmbeddingを生成（誰でもアクセス可能）"""
+    conn = None
     try:
-        if not rag_service or not rag_service.is_enabled:
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
             return jsonify({
                 "status": "error",
                 "message": "RAGサービスが無効です"
             }), 503
 
+        # 接続プールから接続を取得
+        conn = rag_service.get_db_connection()
+        if not conn:
+            return jsonify({
+                "status": "error",
+                "message": "データベース接続の取得に失敗しました"
+            }), 500
+
         # Embedding未生成の文書を検索（全文レコードは除外）
-        with rag_service.db_connection.cursor() as cursor:
+        with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT d.id, d.content
                 FROM documents d
                 LEFT JOIN document_embeddings e ON d.id = e.document_id
                 WHERE e.document_id IS NULL
-                  AND d.is_full_text_chunk = FALSE
+                  AND d.chunk_index >= 0
                 LIMIT 100;
             """)
             pending_docs = cursor.fetchall()
@@ -1102,12 +1111,14 @@ def generate_embeddings_for_pending():
         for doc_id, content in pending_docs:
             try:
                 embedding = rag_service._generate_embedding(content)
-                with rag_service.db_connection.cursor() as cursor:
+                embedding_str = '[' + ','.join(map(str, embedding.tolist())) + ']'
+
+                with conn.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO document_embeddings (document_id, embedding) VALUES (%s, %s)",
-                        (doc_id, embedding)
+                        "INSERT INTO document_embeddings (document_id, embedding) VALUES (%s, %s::vector)",
+                        (doc_id, embedding_str)
                     )
-                rag_service.db_connection.commit()
+                conn.commit()
                 generated_count += 1
             except Exception as e:
                 logger.error(f"Embedding生成エラー (doc_id={doc_id})", error=str(e))
@@ -1121,7 +1132,13 @@ def generate_embeddings_for_pending():
 
     except Exception as e:
         logger.error("Embedding生成に失敗しました", error=str(e), exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "Embedding生成に失敗しました")
+        }), 500
+    finally:
+        if conn:
+            rag_service.return_db_connection(conn)
 
 
 @app.route("/admin/collect-documents", methods=["POST"])
