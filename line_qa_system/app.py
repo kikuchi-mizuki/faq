@@ -1763,19 +1763,23 @@ def upload_document_public():
                     if headers:
                         sheet_text.append(f"列: {', '.join(headers)}")
 
-                    # データ行（最大1000行まで）
+                    # データ行（最大100行まで - タイムアウト対策）
                     row_count = 0
-                    for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), 2):
-                        if row_count >= MAX_ROWS_PER_SHEET:
-                            sheet_text.append(f"... (残りの行は省略されました。最大{MAX_ROWS_PER_SHEET}行まで)")
-                            break
+                    # max_rowで明示的に行数を制限（read_only=Trueでも確実に高速化）
+                    max_row_limit = min(MAX_ROWS_PER_SHEET + 1, worksheet.max_row)  # ヘッダー+100行
 
+                    for row_num, row in enumerate(worksheet.iter_rows(min_row=2, max_row=max_row_limit, values_only=True), 2):
                         row_values = [str(val) if val is not None else "" for val in row]
                         if any(row_values):
                             row_text = " | ".join([f"{h}={v}" for h, v in zip(headers, row_values) if v])
                             if row_text:
                                 sheet_text.append(f"行{row_num}: {row_text}")
                                 row_count += 1
+
+                    # 省略された行がある場合は通知
+                    if worksheet.max_row > max_row_limit:
+                        omitted_rows = worksheet.max_row - max_row_limit
+                        sheet_text.append(f"... (残り{omitted_rows}行は省略されました。最大{MAX_ROWS_PER_SHEET}行まで処理)")
 
                     text_parts.append("\n".join(sheet_text))
 
