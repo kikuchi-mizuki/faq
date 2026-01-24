@@ -1830,10 +1830,15 @@ def upload_document_public():
 
             logger.info(f"RAGへの追加を開始: {title}, サイズ: {content_size_mb:.2f}MB")
 
-            # タイムアウト対策: Embedding生成は常に後で実行（Railway 30秒制限対策）
-            # アップロード後に /generate-embeddings エンドポイントで生成してください
-            generate_embeddings_now = False
-            logger.info(f"Embedding生成は後で実行します（サイズ: {content_size_mb:.2f}MB、タイムアウト対策）")
+            # タイムアウト対策: 小さいファイル（1MB未満）は自動生成、大きいファイルは後で生成
+            # 大きなファイルの場合、アップロード後に /generate-embeddings エンドポイントで生成してください
+            auto_generate_threshold_mb = 1.0  # 1MB未満は自動生成
+            generate_embeddings_now = content_size_mb < auto_generate_threshold_mb
+
+            if generate_embeddings_now:
+                logger.info(f"Embedding生成を自動実行します（サイズ: {content_size_mb:.2f}MB < {auto_generate_threshold_mb}MB）")
+            else:
+                logger.info(f"Embedding生成は後で実行します（サイズ: {content_size_mb:.2f}MB >= {auto_generate_threshold_mb}MB、タイムアウト対策）")
 
             success = rag_service.add_document(
                 source_type="upload",
