@@ -313,8 +313,17 @@ class RAGService:
             logger.error("テーブル作成中にエラーが発生しました", error=str(e))
             return False
 
-    def add_document(self, source_type: str, source_id: str, title: str, content: str, metadata: Dict[str, Any] = None) -> bool:
-        """文書を追加"""
+    def add_document(self, source_type: str, source_id: str, title: str, content: str, metadata: Dict[str, Any] = None, generate_embeddings: bool = True) -> bool:
+        """文書を追加
+
+        Args:
+            source_type: ソースタイプ
+            source_id: ソースID
+            title: タイトル
+            content: 内容
+            metadata: メタデータ
+            generate_embeddings: Embeddingを即座に生成するか（False=後で生成）
+        """
         if not self.is_enabled:
             logger.warning("RAGServiceが無効です")
             return False
@@ -327,7 +336,10 @@ class RAGService:
         try:
             # 文書をチャンクに分割
             chunks = self._split_text(content)
-            
+            logger.info(f"文書を{len(chunks)}個のチャンクに分割しました")
+
+            document_ids = []
+
             with self.db_connection.cursor() as cursor:
                 for i, chunk in enumerate(chunks):
                     # 文書を保存
@@ -336,26 +348,38 @@ class RAGService:
                         VALUES (%s, %s, %s, %s, %s, %s)
                         RETURNING id;
                     """, (source_type, source_id, title, chunk, i, json.dumps(metadata or {})))
-                    
+
                     document_id = cursor.fetchone()[0]
-                    
-                    # 埋め込みベクトルを生成
-                    embedding = self._generate_embedding(chunk)
-                    
-                    # ベクトルを保存
-                    # 埋め込みベクトルを文字列形式に変換
-                    embedding_str = '[' + ','.join(map(str, embedding.tolist())) + ']'
-                    cursor.execute("""
-                        INSERT INTO document_embeddings (document_id, embedding)
-                        VALUES (%s, %s::vector);
-                    """, (document_id, embedding_str))
-                
+                    document_ids.append(document_id)
+
+                    # Embeddingを即座に生成する場合のみ
+                    if generate_embeddings:
+                        # 埋め込みベクトルを生成
+                        embedding = self._generate_embedding(chunk)
+
+                        # ベクトルを保存
+                        embedding_str = '[' + ','.join(map(str, embedding.tolist())) + ']'
+                        cursor.execute("""
+                            INSERT INTO document_embeddings (document_id, embedding)
+                            VALUES (%s, %s::vector);
+                        """, (document_id, embedding_str))
+
                 self.db_connection.commit()
-                logger.info(f"文書を追加しました: {source_type}/{source_id}")
+
+                if generate_embeddings:
+                    logger.info(f"文書とEmbeddingを追加しました: {source_type}/{source_id}, {len(chunks)}チャンク")
+                else:
+                    logger.info(f"文書を追加しました（Embeddingは後で生成）: {source_type}/{source_id}, {len(chunks)}チャンク")
+
                 return True
-                
+
         except Exception as e:
-            logger.error("文書追加中にエラーが発生しました", error=str(e))
+            logger.error("文書追加中にエラーが発生しました", error=str(e), exc_info=True)
+            if self.db_connection:
+                try:
+                    self.db_connection.rollback()
+                except:
+                    pass
             return False
 
     def search_similar_documents(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:

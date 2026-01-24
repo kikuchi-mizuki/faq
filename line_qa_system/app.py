@@ -1709,7 +1709,13 @@ def upload_document_public():
 
             logger.info(f"RAGへの追加を開始: {title}, サイズ: {content_size_mb:.2f}MB")
 
-            rag_service.add_document(
+            # 大きなファイル（2MB以上）の場合はEmbeddingを後で生成
+            generate_embeddings_now = content_size_mb < 2.0
+
+            if not generate_embeddings_now:
+                logger.info(f"大きなファイルのためEmbeddingは後で生成します: {content_size_mb:.2f}MB")
+
+            success = rag_service.add_document(
                 source_type="upload",
                 source_id=f"upload_{file_hash}",
                 title=title,
@@ -1718,9 +1724,17 @@ def upload_document_public():
                     "filename": file.filename,
                     "uploaded_at": datetime.now().isoformat(),
                     "file_type": filename.split('.')[-1],
-                    "content_size_mb": round(content_size_mb, 2)
-                }
+                    "content_size_mb": round(content_size_mb, 2),
+                    "embeddings_generated": generate_embeddings_now
+                },
+                generate_embeddings=generate_embeddings_now
             )
+
+            if not success:
+                return jsonify({
+                    "status": "error",
+                    "message": "ファイルの追加に失敗しました"
+                }), 500
 
             logger.info(f"ファイルをRAGに追加しました: {title}")
 
