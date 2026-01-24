@@ -840,6 +840,13 @@ def list_documents():
 
         # 接続プールから接続を取得
         conn = rag_service.get_db_connection()
+        if not conn:
+            logger.error("データベース接続の取得に失敗しました")
+            return jsonify({
+                "status": "error",
+                "message": safe_error_message(None, "データベース接続の取得に失敗しました")
+            }), 500
+
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT
@@ -896,6 +903,13 @@ def list_documents_public():
 
         # 接続プールから接続を取得
         conn = rag_service.get_db_connection()
+        if not conn:
+            logger.error("データベース接続の取得に失敗しました")
+            return jsonify({
+                "status": "error",
+                "message": "データベース接続の取得に失敗しました"
+            }), 500
+
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT
@@ -977,6 +991,12 @@ def delete_document():
 
         # 接続プールから接続を取得
         conn = rag_service.get_db_connection()
+        if not conn:
+            logger.error("データベース接続の取得に失敗しました")
+            return jsonify({
+                "status": "error",
+                "message": "データベース接続の取得に失敗しました"
+            }), 500
 
         # データベースから削除
         with conn.cursor() as cursor:
