@@ -12,6 +12,7 @@ from datetime import datetime
 import structlog
 
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
 # 条件付きインポート（軽量化版）
@@ -51,6 +52,7 @@ class RAGService:
 
             self.embedding_model = None
             self.db_connection = None
+            self.db_pool = None  # 接続プール
             self.is_enabled = False
 
             # 設定の読み込み
@@ -71,7 +73,7 @@ class RAGService:
             # デバッグ用ログ
             print(f"🎯 RAGService初期化完了: is_enabled={self.is_enabled}")
             print(f"🎯 Geminiモデル: {self.gemini_model is not None}")
-            print(f"🎯 DB接続: {self.db_connection is not None}")
+            print(f"🎯 DB接続プール: {self.db_pool is not None}")
             print("=" * 60)
             logger.warning(f"RAGService初期化完了: is_enabled={self.is_enabled}")
 
@@ -79,6 +81,15 @@ class RAGService:
             print(f"❌ RAGServiceの初期化中にエラー: {e}")
             logger.error("RAGServiceの初期化中にエラーが発生しました", error=str(e))
             self.is_enabled = False
+
+    def __del__(self):
+        """デストラクタ - 接続プールをクローズ"""
+        try:
+            if self.db_pool:
+                self.db_pool.closeall()
+                print("✅ データベース接続プールをクローズしました")
+        except Exception as e:
+            print(f"⚠️ 接続プールのクローズ中にエラー: {e}")
 
     def _initialize_rag_service(self):
         """RAGサービスの初期化（シンプル版）"""
@@ -159,15 +170,19 @@ class RAGService:
             return False
 
         try:
-            # タイムアウト設定付きで接続（10秒に延長）
+            # タイムアウト設定付きで接続プールを作成（10秒に延長）
             # Railway環境ではネットワーク遅延があるため
-            print("🔌 データベースに接続しています...")
-            self.db_connection = psycopg2.connect(
-                self.database_url,
+            print("🔌 データベース接続プールを作成しています...")
+            self.db_pool = pool.SimpleConnectionPool(
+                minconn=1,
+                maxconn=5,
+                dsn=self.database_url,
                 connect_timeout=10
             )
-            print("✅ データベース接続を確立しました")
-            logger.info("データベース接続を確立しました")
+            # 初期接続テスト用
+            self.db_connection = self.db_pool.getconn()
+            print("✅ データベース接続プールを作成しました")
+            logger.info("データベース接続プールを作成しました")
 
             # pgvector拡張の確認（簡略版）
             with self.db_connection.cursor() as cursor:
@@ -192,12 +207,20 @@ class RAGService:
             print("✅ データベーステーブルの作成が完了しました")
             logger.info("データベース接続が確立されました")
             logger.info("データベース接続とpgvectorの両方が成功したためTrueを返します")
+
+            # 初期接続を返却
+            self.db_pool.putconn(self.db_connection)
+            self.db_connection = None
+
             return True
 
         except Exception as e:
             print(f"❌ データベース接続に失敗しました: {e}")
             logger.error("データベース接続に失敗しました", error=str(e), exc_info=True)
+            if self.db_connection and self.db_pool:
+                self.db_pool.putconn(self.db_connection)
             self.db_connection = None
+            self.db_pool = None
             return False
 
     def _initialize_full_rag(self):
@@ -329,10 +352,11 @@ class RAGService:
             return False
 
         # 代替RAG機能（Geminiのみ）の場合、文書追加は利用できない
-        if not self.db_connection or not self.embedding_model:
+        if not self.db_pool or not self.embedding_model:
             logger.info("代替RAG機能では文書追加は利用できません（ベクトルDB未接続）")
             return False
 
+        conn = None
         try:
             # 文書をチャンクに分割
             chunks = self._split_text(content)
@@ -340,7 +364,9 @@ class RAGService:
 
             document_ids = []
 
-            with self.db_connection.cursor() as cursor:
+            # 接続プールから接続を取得
+            conn = self.db_pool.getconn()
+            with conn.cursor() as cursor:
                 # 1. まず全文を保存（Gems方式の学習用）
                 cursor.execute("""
                     INSERT INTO documents (source_type, source_id, title, content, full_content, chunk_index, is_full_text_chunk, metadata)
@@ -375,7 +401,7 @@ class RAGService:
                             VALUES (%s, %s::vector);
                         """, (document_id, embedding_str))
 
-                self.db_connection.commit()
+                conn.commit()
 
                 if generate_embeddings:
                     logger.info(f"文書（全文+チャンク）とEmbeddingを追加しました: {source_type}/{source_id}, {len(chunks)}チャンク")
@@ -386,12 +412,16 @@ class RAGService:
 
         except Exception as e:
             logger.error("文書追加中にエラーが発生しました", error=str(e), exc_info=True)
-            if self.db_connection:
+            if conn:
                 try:
-                    self.db_connection.rollback()
+                    conn.rollback()
                 except:
                     pass
             return False
+        finally:
+            # 接続をプールに返却
+            if conn and self.db_pool:
+                self.db_pool.putconn(conn)
 
     def search_similar_documents(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """類似文書を検索"""
@@ -404,18 +434,21 @@ class RAGService:
             return []
 
         # 代替RAG機能（Geminiのみ）の場合、ベクトル検索は利用できない
-        if not self.db_connection or not self.embedding_model:
-            print(f"⚠️ DB接続: {self.db_connection is not None}, Embeddingモデル: {self.embedding_model is not None}")
-            logger.warning(f"代替RAG機能チェック: DB接続={self.db_connection is not None}, Embeddingモデル={self.embedding_model is not None}")
+        if not self.db_pool or not self.embedding_model:
+            print(f"⚠️ DB接続プール: {self.db_pool is not None}, Embeddingモデル: {self.embedding_model is not None}")
+            logger.warning(f"代替RAG機能チェック: DB接続プール={self.db_pool is not None}, Embeddingモデル={self.embedding_model is not None}")
             return []
 
+        conn = None
         try:
             print("✅ ベクトル検索を開始します")
             # クエリの埋め込みベクトルを生成
             query_embedding = self._generate_embedding(query)
             print(f"✅ クエリのEmbeddingを生成しました: shape={query_embedding.shape if hasattr(query_embedding, 'shape') else 'N/A'}")
-            
-            with self.db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
+
+            # 接続プールから接続を取得
+            conn = self.db_pool.getconn()
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # 埋め込みベクトルを文字列形式に変換
                 embedding_str = '[' + ','.join(map(str, query_embedding.tolist())) + ']'
 
@@ -481,6 +514,10 @@ class RAGService:
             print(f"❌ 類似文書検索中にエラー: {e}")
             logger.error("類似文書検索中にエラーが発生しました", error=str(e))
             return []
+        finally:
+            # 接続をプールに返却
+            if conn and self.db_pool:
+                self.db_pool.putconn(conn)
 
     def generate_answer(self, query: str, context: str = "") -> str:
         """コンテキストに基づいて回答を生成"""
