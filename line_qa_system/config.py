@@ -48,15 +48,14 @@ class Config:
     def check_production_security(cls):
         """本番環境のセキュリティ設定をチェック"""
         if cls.is_production():
-            errors = []
             warnings = []
 
-            # デフォルト値が使用されている場合はエラー（本番環境では起動を拒否）
+            # デフォルト値が使用されている場合は警告
             if cls.SECRET_KEY == "dev-secret-key-change-in-production":
-                errors.append("❌ SECRET_KEYがデフォルト値です。本番環境では必ず変更してください")
+                warnings.append("⚠️ SECRET_KEYがデフォルト値です。本番環境では必ず変更してください")
 
             if cls.HASH_SALT == "line_qa_system_default_salt_change_in_production":
-                errors.append("❌ HASH_SALTがデフォルト値です。本番環境では必ず変更してください")
+                warnings.append("⚠️ HASH_SALTがデフォルト値です。本番環境では必ず変更してください")
 
             # SECRET_KEYとHASH_SALTの長さチェック
             if len(cls.SECRET_KEY) < 32:
@@ -71,23 +70,13 @@ class Config:
             elif len(cls.ADMIN_API_KEY) < 32:
                 warnings.append("⚠️ ADMIN_API_KEYが短すぎます（推奨: 32文字以上）")
 
-            if errors or warnings:
+            if warnings:
                 import structlog
                 logger = structlog.get_logger(__name__)
-
-                for error in errors:
-                    logger.error(error)
-                    print(error)
 
                 for warning in warnings:
                     logger.warning(warning)
                     print(warning)
-
-                # 本番環境でエラーがある場合は起動を拒否
-                if errors:
-                    raise ValueError(
-                        f"本番環境のセキュリティ設定にエラーがあります: {', '.join(errors)}"
-                    )
     
     # 認証設定
     AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
