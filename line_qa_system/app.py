@@ -1640,9 +1640,15 @@ def upload_document_public():
                 workbook = openpyxl.load_workbook(excel_file, data_only=True, read_only=True)
 
                 text_parts = []
-                MAX_ROWS_PER_SHEET = 1000  # 1シートあたりの最大行数
+                MAX_ROWS_PER_SHEET = 100  # 1シートあたりの最大行数（タイムアウト対策）
+                MAX_SHEETS = 10  # 最大シート数
 
+                sheet_count = 0
                 for sheet_name in workbook.sheetnames:
+                    sheet_count += 1
+                    if sheet_count > MAX_SHEETS:
+                        text_parts.append(f"... (残り{len(workbook.sheetnames) - MAX_SHEETS}シートは省略されました)")
+                        break
                     worksheet = workbook[sheet_name]
                     sheet_text = [f"=== シート: {sheet_name} ==="]
 
