@@ -1709,11 +1709,10 @@ def upload_document_public():
 
             logger.info(f"RAGへの追加を開始: {title}, サイズ: {content_size_mb:.2f}MB")
 
-            # 大きなファイル（2MB以上）の場合はEmbeddingを後で生成
-            generate_embeddings_now = content_size_mb < 2.0
-
-            if not generate_embeddings_now:
-                logger.info(f"大きなファイルのためEmbeddingは後で生成します: {content_size_mb:.2f}MB")
+            # タイムアウト対策: すべてのファイルでEmbeddingを後で生成
+            # これにより即座にレスポンスを返せる
+            generate_embeddings_now = False
+            logger.info(f"Embeddingは後で生成します（タイムアウト対策）")
 
             success = rag_service.add_document(
                 source_type="upload",
