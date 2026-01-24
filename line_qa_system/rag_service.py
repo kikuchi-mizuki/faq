@@ -341,13 +341,24 @@ class RAGService:
             document_ids = []
 
             with self.db_connection.cursor() as cursor:
+                # 1. まず全文を保存（Gems方式の学習用）
+                cursor.execute("""
+                    INSERT INTO documents (source_type, source_id, title, content, full_content, chunk_index, is_full_text_chunk, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                """, (source_type, source_id, title, content[:1000], content, -1, True, json.dumps(metadata or {})))
+
+                full_text_doc_id = cursor.fetchone()[0]
+                logger.info(f"全文を保存しました: {source_type}/{source_id}, サイズ={len(content)}文字")
+
+                # 2. チャンクを保存（ベクトル検索用）
                 for i, chunk in enumerate(chunks):
                     # 文書を保存
                     cursor.execute("""
-                        INSERT INTO documents (source_type, source_id, title, content, chunk_index, metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO documents (source_type, source_id, title, content, full_content, chunk_index, is_full_text_chunk, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id;
-                    """, (source_type, source_id, title, chunk, i, json.dumps(metadata or {})))
+                    """, (source_type, source_id, title, chunk, content, i, False, json.dumps(metadata or {})))
 
                     document_id = cursor.fetchone()[0]
                     document_ids.append(document_id)
@@ -367,9 +378,9 @@ class RAGService:
                 self.db_connection.commit()
 
                 if generate_embeddings:
-                    logger.info(f"文書とEmbeddingを追加しました: {source_type}/{source_id}, {len(chunks)}チャンク")
+                    logger.info(f"文書（全文+チャンク）とEmbeddingを追加しました: {source_type}/{source_id}, {len(chunks)}チャンク")
                 else:
-                    logger.info(f"文書を追加しました（Embeddingは後で生成）: {source_type}/{source_id}, {len(chunks)}チャンク")
+                    logger.info(f"文書（全文+チャンク）を追加しました（Embeddingは後で生成）: {source_type}/{source_id}, {len(chunks)}チャンク")
 
                 return True
 
@@ -408,7 +419,7 @@ class RAGService:
                 # 埋め込みベクトルを文字列形式に変換
                 embedding_str = '[' + ','.join(map(str, query_embedding.tolist())) + ']'
 
-                # 類似度検索（まず閾値なしで全件取得してスコアを確認）
+                # 類似度検索（通常チャンクのみ対象 - is_full_text_chunk=false）
                 print(f"🔍 類似度閾値: {self.similarity_threshold}")
                 cursor.execute("""
                     SELECT
@@ -417,10 +428,12 @@ class RAGService:
                         d.source_id,
                         d.title,
                         d.content,
+                        d.full_content,
                         d.metadata,
                         1 - (de.embedding <=> %s::vector) as similarity
                     FROM documents d
                     JOIN document_embeddings de ON d.id = de.document_id
+                    WHERE d.is_full_text_chunk = FALSE
                     ORDER BY similarity DESC
                     LIMIT 10;
                 """, (embedding_str,))
@@ -434,11 +447,20 @@ class RAGService:
                 results = [r for r in all_results if r['similarity'] > self.similarity_threshold]
                 print(f"✅ 閾値 {self.similarity_threshold} 以上: {len(results)}件")
 
-                # limitで絞る
-                results = results[:limit]
-                print(f"✅ DB検索結果（最終）: {len(results)}件")
+                # limitで絞る（ただしsource_idごとに1件のみ）
+                seen_source_ids = set()
+                unique_results = []
+                for r in results:
+                    if r['source_id'] not in seen_source_ids:
+                        seen_source_ids.add(r['source_id'])
+                        unique_results.append(r)
+                        if len(unique_results) >= limit:
+                            break
 
-                # 辞書形式に変換
+                results = unique_results
+                print(f"✅ DB検索結果（最終、重複除外）: {len(results)}件")
+
+                # 辞書形式に変換（full_contentを使用 - Gems方式）
                 documents = []
                 for row in results:
                     documents.append({
@@ -446,7 +468,7 @@ class RAGService:
                         'source_type': row['source_type'],
                         'source_id': row['source_id'],
                         'title': row['title'],
-                        'content': row['content'],
+                        'content': row['full_content'] if row['full_content'] else row['content'],  # 全文を優先
                         'metadata': row['metadata'],
                         'similarity': float(row['similarity'])
                     })
