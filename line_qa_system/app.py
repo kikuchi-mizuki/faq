@@ -1105,6 +1105,102 @@ def delete_document():
             rag_service.return_db_connection(conn)
 
 
+@app.route("/download-document/<source_id>", methods=["GET"])
+def download_document(source_id):
+    """文書をダウンロード（公開エンドポイント）"""
+    conn = None
+    try:
+        # RAGサービスの状態確認
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスが無効です"
+            }), 503
+
+        # source_typeをクエリパラメータから取得（オプション）
+        source_type = request.args.get('source_type')
+
+        # 接続プールから接続を取得
+        conn = rag_service.get_db_connection()
+        if not conn:
+            logger.error("データベース接続の取得に失敗しました")
+            return jsonify({
+                "status": "error",
+                "message": "データベース接続の取得に失敗しました"
+            }), 500
+
+        # データベースから文書を取得（全チャンクを結合）
+        with conn.cursor() as cursor:
+            # chunk_index >= 0のチャンクを順番に取得
+            if source_type:
+                cursor.execute("""
+                    SELECT title, content, chunk_index, full_content
+                    FROM documents
+                    WHERE source_id = %s AND source_type = %s AND chunk_index >= 0
+                    ORDER BY chunk_index ASC;
+                """, (source_id, source_type))
+            else:
+                cursor.execute("""
+                    SELECT title, content, chunk_index, full_content
+                    FROM documents
+                    WHERE source_id = %s AND chunk_index >= 0
+                    ORDER BY chunk_index ASC;
+                """, (source_id,))
+
+            results = cursor.fetchall()
+
+            if not results:
+                return jsonify({
+                    "status": "error",
+                    "message": "指定された文書が見つかりません"
+                }), 404
+
+            # タイトルを取得
+            title = results[0][0]
+
+            # full_contentがあればそれを使用、なければチャンクを結合
+            full_content = results[0][3]  # full_content
+
+            if not full_content:
+                # full_contentがない場合、チャンクを結合
+                content_parts = [row[1] for row in results]  # content
+                full_content = "\n\n".join(content_parts)
+
+            # ファイル名を決定（拡張子を保持）
+            filename = title if title else f"document_{source_id}.txt"
+
+            # Content-Typeを決定
+            content_type = "text/plain; charset=utf-8"
+            if filename.endswith('.pdf'):
+                content_type = "application/pdf"
+            elif filename.endswith(('.xlsx', '.xls')):
+                content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+            # レスポンスを返す
+            from flask import Response
+            response = Response(
+                full_content,
+                mimetype=content_type,
+                headers={
+                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Content-Type": content_type
+                }
+            )
+
+            logger.info(f"文書をダウンロード: source_id={source_id}, title={title}")
+            return response
+
+    except Exception as e:
+        logger.error("文書ダウンロードに失敗しました", error=str(e), exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "文書ダウンロードに失敗しました")
+        }), 500
+    finally:
+        if conn:
+            rag_service.return_db_connection(conn)
+
+
 @app.route("/generate-embeddings", methods=["POST"])
 def generate_embeddings_for_pending():
     """Embedding未生成の文書に対してEmbeddingを生成（誰でもアクセス可能）"""
@@ -1368,6 +1464,12 @@ def upload_form():
             cursor: not-allowed;
             transform: none;
         }
+        button.primary {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+        button.primary:hover {
+            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.4);
+        }
         button.danger {
             background: linear-gradient(135deg, #f56565 0%, #c53030 100%);
         }
@@ -1450,6 +1552,10 @@ def upload_form():
         .document-actions {
             display: flex;
             gap: 10px;
+        }
+        .document-actions button {
+            padding: 8px 16px;
+            font-size: 14px;
         }
         .empty-state {
             text-align: center;
@@ -1624,6 +1730,9 @@ def upload_form():
                                     </div>
                                 </div>
                                 <div class="document-actions">
+                                    <button class="primary" onclick="downloadDocument('${doc.source_id}', '${doc.source_type}')">
+                                        📥 ダウンロード
+                                    </button>
                                     <button class="danger" onclick="deleteDocument('${doc.source_id}', '${doc.source_type}')">
                                         🗑️ 削除
                                     </button>
@@ -1639,6 +1748,12 @@ def upload_form():
             } finally {
                 loader.style.display = 'none';
             }
+        }
+
+        // 文書をダウンロード
+        function downloadDocument(sourceId, sourceType) {
+            const url = `/download-document/${sourceId}?source_type=${sourceType}`;
+            window.location.href = url;
         }
 
         // 文書を削除
