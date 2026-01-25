@@ -1178,11 +1178,16 @@ def download_document(source_id):
 
             # レスポンスを返す
             from flask import Response
+            from urllib.parse import quote
+
+            # 日本語ファイル名をRFC 5987形式でエンコード
+            encoded_filename = quote(filename)
+
             response = Response(
                 full_content,
                 mimetype=content_type,
                 headers={
-                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
                     "Content-Type": content_type
                 }
             )
