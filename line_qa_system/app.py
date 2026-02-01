@@ -1345,7 +1345,7 @@ def collect_documents():
 
 @app.route("/upload", methods=["GET"])
 def upload_form():
-    """ファイルアップロード・管理画面（誰でもアクセス可能）"""
+    """ファイルアップロード・管理画面（誰でもアクセス可能）- Gemスタイル"""
     html = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -1355,326 +1355,554 @@ def upload_form():
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>ファイル管理 - LINE Q&A System v2.0</title>
+    <title>ファイルアップロード</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f8f9fa;
             min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             padding: 20px;
         }
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
+            max-width: 680px;
+            width: 100%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .logo {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #8E44AD 0%, #3498DB 100%);
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 400;
+            color: #202124;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #5f6368;
         }
         .card {
             background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            padding: 40px;
-            margin-bottom: 30px;
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 28px;
-        }
-        h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 22px;
-        }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 14px;
+            border-radius: 12px;
+            border: 1px solid #e8eaed;
+            overflow: hidden;
+            margin-bottom: 16px;
         }
         .tabs {
             display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 1px solid #e8eaed;
+            background: #f8f9fa;
         }
         .tab {
-            padding: 12px 24px;
+            flex: 1;
+            padding: 16px;
             background: transparent;
             border: none;
-            border-bottom: 3px solid transparent;
             cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            color: #666;
-            transition: all 0.3s;
+            font-size: 14px;
+            font-weight: 500;
+            color: #5f6368;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
         }
         .tab.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
+            color: #1a73e8;
+            border-bottom-color: #1a73e8;
+            background: white;
         }
-        .tab:hover {
-            color: #667eea;
+        .tab:hover:not(.active) {
+            background: #f1f3f4;
         }
         .tab-content {
             display: none;
+            padding: 32px;
         }
         .tab-content.active {
             display: block;
         }
+
+        /* ドラッグ&ドロップエリア */
+        .upload-area {
+            border: 2px dashed #dadce0;
+            border-radius: 8px;
+            padding: 48px 24px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            background: #f8f9fa;
+            margin-bottom: 24px;
+        }
+        .upload-area.dragover {
+            border-color: #1a73e8;
+            background: #e8f0fe;
+        }
+        .upload-area:hover {
+            border-color: #1a73e8;
+            background: #f1f3f4;
+        }
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.7;
+        }
+        .upload-text {
+            font-size: 16px;
+            color: #202124;
+            margin-bottom: 8px;
+        }
+        .upload-hint {
+            font-size: 13px;
+            color: #5f6368;
+        }
+        .file-input {
+            display: none;
+        }
+
+        /* 選択されたファイル表示 */
+        .selected-file {
+            display: none;
+            background: #e8f0fe;
+            border: 1px solid #1a73e8;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            align-items: center;
+            gap: 12px;
+        }
+        .selected-file.show {
+            display: flex;
+        }
+        .file-icon {
+            font-size: 32px;
+        }
+        .file-details {
+            flex: 1;
+        }
+        .file-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 4px;
+        }
+        .file-size {
+            font-size: 12px;
+            color: #5f6368;
+        }
+        .remove-file {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: #5f6368;
+            font-size: 20px;
+            padding: 8px;
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+        .remove-file:hover {
+            background: #f1f3f4;
+        }
+
+        /* 入力フィールド */
         .form-group {
-            margin-bottom: 25px;
+            margin-bottom: 24px;
         }
         label {
             display: block;
+            font-size: 13px;
+            color: #5f6368;
             margin-bottom: 8px;
-            color: #333;
-            font-weight: 600;
+            font-weight: 500;
         }
-        input[type="text"], input[type="file"] {
+        input[type="text"] {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
+            padding: 12px 16px;
+            border: 1px solid #dadce0;
             border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-        input[type="text"]:focus, input[type="file"]:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .file-info {
-            background: #f5f5f5;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 10px;
             font-size: 14px;
-            color: #666;
+            transition: all 0.2s;
+            font-family: inherit;
         }
-        button {
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.1);
+        }
+
+        /* ボタン */
+        .btn {
             padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
+            border-radius: 24px;
+            font-size: 14px;
+            font-weight: 500;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.2s;
+            font-family: inherit;
         }
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        .btn-primary {
+            background: #1a73e8;
+            color: white;
         }
-        button:disabled {
-            background: #ccc;
+        .btn-primary:hover:not(:disabled) {
+            background: #1557b0;
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
+        }
+        .btn-primary:disabled {
+            background: #dadce0;
             cursor: not-allowed;
-            transform: none;
         }
-        button.primary {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        .btn-secondary {
+            background: #f1f3f4;
+            color: #5f6368;
         }
-        button.primary:hover {
-            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.4);
+        .btn-secondary:hover {
+            background: #e8eaed;
         }
-        button.danger {
-            background: linear-gradient(135deg, #f56565 0%, #c53030 100%);
+        .btn-danger {
+            background: #ea4335;
+            color: white;
         }
-        button.danger:hover {
-            box-shadow: 0 10px 20px rgba(245, 101, 101, 0.4);
+        .btn-danger:hover {
+            background: #d33b2c;
         }
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        /* メッセージ */
         .message {
-            margin-top: 20px;
-            padding: 15px;
+            padding: 12px 16px;
             border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 24px;
             display: none;
+            align-items: center;
+            gap: 12px;
+        }
+        .message.show {
+            display: flex;
         }
         .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: #e6f4ea;
+            color: #137333;
+            border: 1px solid #c6e1c6;
         }
         .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: #fce8e6;
+            color: #c5221f;
+            border: 1px solid #f4c7c3;
         }
+        .message-icon {
+            font-size: 20px;
+        }
+
+        /* ローダー */
         .loader {
             display: none;
-            margin-top: 20px;
             text-align: center;
+            padding: 32px;
+        }
+        .loader.show {
+            display: block;
         }
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 3px solid #f1f3f4;
+            border-top: 3px solid #1a73e8;
             border-radius: 50%;
             width: 40px;
             height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .documents-list {
-            margin-top: 20px;
+        .loader-text {
+            font-size: 14px;
+            color: #5f6368;
         }
-        .document-item {
-            background: #f9f9f9;
-            border: 1px solid #e0e0e0;
+
+        /* ファイルリスト */
+        .file-list {
+            margin-top: 24px;
+        }
+        .file-item {
+            background: #f8f9fa;
+            border: 1px solid #e8eaed;
             border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
+            padding: 16px;
+            margin-bottom: 12px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            transition: box-shadow 0.2s;
+            gap: 16px;
+            transition: all 0.2s;
         }
-        .document-item:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        .file-item:hover {
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
         }
-        .document-info {
+        .file-item-icon {
+            font-size: 32px;
+        }
+        .file-item-info {
             flex: 1;
         }
-        .document-title {
-            font-weight: 600;
-            color: #333;
-            font-size: 16px;
-            margin-bottom: 5px;
-        }
-        .document-meta {
+        .file-item-title {
             font-size: 14px;
-            color: #666;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 4px;
         }
-        .document-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            background: #667eea;
-            color: white;
-            border-radius: 4px;
+        .file-item-meta {
             font-size: 12px;
+            color: #5f6368;
+        }
+        .file-item-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e8f0fe;
+            color: #1a73e8;
+            border-radius: 4px;
+            font-size: 11px;
             margin-right: 8px;
+            font-weight: 500;
         }
-        .document-actions {
+        .file-item-actions {
             display: flex;
-            gap: 10px;
+            gap: 8px;
         }
-        .document-actions button {
-            padding: 8px 16px;
-            font-size: 14px;
+        .icon-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: background 0.2s;
+            font-size: 20px;
+        }
+        .icon-btn:hover {
+            background: #f1f3f4;
         }
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
-            color: #999;
+            padding: 48px 24px;
         }
-        .empty-state-icon {
+        .empty-icon {
             font-size: 64px;
-            margin-bottom: 20px;
+            opacity: 0.3;
+            margin-bottom: 16px;
+        }
+        .empty-text {
+            font-size: 14px;
+            color: #5f6368;
+        }
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #1a73e8;
+            padding: 12px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #5f6368;
+            margin-top: 16px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card">
-            <h1>📚 ファイル管理</h1>
-            <p class="subtitle">ファイルのアップロード・一覧表示・削除ができます</p>
+        <div class="header">
+            <div class="logo">📁</div>
+            <h1>ファイルアップロード</h1>
+            <p class="subtitle">ドキュメントをアップロードしてAIに学習させる</p>
+        </div>
 
+        <div class="card">
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('upload', event)">📤 アップロード</button>
-                <button class="tab" onclick="switchTab('list', event)">📋 一覧表示</button>
+                <button class="tab active" onclick="switchTab('upload')">アップロード</button>
+                <button class="tab" onclick="switchTab('list')">ファイル一覧</button>
             </div>
 
             <!-- アップロードタブ -->
             <div id="upload-tab" class="tab-content active">
+                <div class="upload-area" id="dropArea">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">ファイルをドラッグ&ドロップ</div>
+                    <div class="upload-hint">または クリックしてファイルを選択</div>
+                </div>
+
+                <div class="selected-file" id="selectedFile">
+                    <div class="file-icon">📄</div>
+                    <div class="file-details">
+                        <div class="file-name" id="fileName"></div>
+                        <div class="file-size" id="fileSize"></div>
+                    </div>
+                    <button class="remove-file" onclick="removeFile()">✕</button>
+                </div>
+
+                <input type="file" id="fileInput" class="file-input" accept=".pdf,.xlsx,.xls,.txt">
+
                 <form id="uploadForm">
                     <div class="form-group">
                         <label for="title">タイトル（オプション）</label>
-                        <input type="text" id="title" name="title" placeholder="例: 製品マニュアル">
+                        <input type="text" id="title" placeholder="このファイルで何をするかを入力してください">
                     </div>
 
-                    <div class="form-group">
-                        <label for="file">ファイルを選択 *</label>
-                        <input type="file" id="file" name="file" accept=".pdf,.xlsx,.xls,.txt" required>
-                        <div class="file-info">
-                            対応形式: PDF (.pdf), Excel (.xlsx, .xls), テキスト (.txt)<br>
-                            最大サイズ: 5MB<br>
-                            ※ 大きなファイルは分割してアップロードしてください
-                        </div>
+                    <div class="info-box">
+                        💡 対応形式: PDF, Excel (.xlsx, .xls), テキスト (.txt) | 最大サイズ: 5MB
                     </div>
 
-                    <button type="submit" id="submitBtn">アップロード</button>
+                    <div id="uploadMessage" class="message"></div>
+
+                    <div class="btn-group" style="margin-top: 24px;">
+                        <button type="submit" id="uploadBtn" class="btn btn-primary" disabled>アップロード</button>
+                    </div>
                 </form>
 
-                <div class="loader" id="uploadLoader">
+                <div id="uploadLoader" class="loader">
                     <div class="spinner"></div>
-                    <p style="margin-top: 10px; color: #666;">アップロード中...</p>
+                    <div class="loader-text">アップロード中...</div>
                 </div>
-
-                <div class="message" id="uploadMessage"></div>
             </div>
 
-            <!-- 一覧表示タブ -->
+            <!-- ファイル一覧タブ -->
             <div id="list-tab" class="tab-content">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2>登録されているファイル</h2>
-                    <div style="display: flex; gap: 10px;">
-                        <button onclick="generateEmbeddings()">🔧 Embedding生成</button>
-                        <button onclick="loadDocuments()">🔄 更新</button>
-                    </div>
+                    <h2 style="font-size: 18px; font-weight: 500; color: #202124; margin: 0;">アップロード済みファイル</h2>
+                    <button onclick="loadDocuments()" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;">🔄 更新</button>
                 </div>
 
-                <div class="loader" id="listLoader">
+                <div id="listLoader" class="loader">
                     <div class="spinner"></div>
-                    <p style="margin-top: 10px; color: #666;">読み込み中...</p>
+                    <div class="loader-text">読み込み中...</div>
                 </div>
 
-                <div class="message" id="listMessage"></div>
+                <div id="listMessage" class="message"></div>
 
-                <div id="documentsList" class="documents-list"></div>
+                <div id="fileList" class="file-list"></div>
             </div>
         </div>
     </div>
 
     <script>
+        let selectedFile = null;
+
+        // DOM要素
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const selectedFileDiv = document.getElementById('selectedFile');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadForm = document.getElementById('uploadForm');
+
+        // ドラッグ&ドロップイベント
+        dropArea.addEventListener('click', () => fileInput.click());
+
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.classList.add('dragover');
+        });
+
+        dropArea.addEventListener('dragleave', () => {
+            dropArea.classList.remove('dragover');
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            selectedFile = file;
+            const fileSize = (file.size / 1024).toFixed(1);
+            const fileIcon = getFileIcon(file.name);
+
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = `${fileSize} KB`;
+            document.querySelector('.file-icon').textContent = fileIcon;
+
+            selectedFileDiv.classList.add('show');
+            uploadBtn.disabled = false;
+
+            // FileInputに同じファイルを設定
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+        }
+
+        function removeFile() {
+            selectedFile = null;
+            selectedFileDiv.classList.remove('show');
+            uploadBtn.disabled = true;
+            fileInput.value = '';
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            if (ext === 'pdf') return '📕';
+            if (ext === 'xlsx' || ext === 'xls') return '📊';
+            if (ext === 'txt') return '📄';
+            return '📁';
+        }
+
         // タブ切り替え
-        function switchTab(tabName, event) {
-            // すべてのタブとコンテンツを非アクティブ化
+        function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-            // 選択されたタブをアクティブ化
             event.target.classList.add('active');
             document.getElementById(tabName + '-tab').classList.add('active');
 
-            // 一覧タブに切り替えたら文書を読み込む
             if (tabName === 'list') {
                 loadDocuments();
             }
         }
 
-        // ファイルアップロード
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        // アップロード処理
+        uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const submitBtn = document.getElementById('submitBtn');
-            const loader = document.getElementById('uploadLoader');
-            const message = document.getElementById('uploadMessage');
-            const fileInput = document.getElementById('file');
-            const titleInput = document.getElementById('title');
-
-            if (!fileInput.files.length) {
-                showMessage('uploadMessage', 'error', 'ファイルを選択してください');
+            if (!selectedFile) {
+                showMessage('uploadMessage', 'error', '⚠ ファイルを選択してください');
                 return;
             }
 
-            submitBtn.disabled = true;
-            loader.style.display = 'block';
-            message.style.display = 'none';
+            const loader = document.getElementById('uploadLoader');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            uploadBtn.disabled = true;
+            loader.classList.add('show');
+            hideMessage('uploadMessage');
 
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            if (titleInput.value) {
-                formData.append('title', titleInput.value);
+            formData.append('file', selectedFile);
+            const title = document.getElementById('title').value;
+            if (title) {
+                formData.append('title', title);
             }
 
             try {
@@ -1686,29 +1914,29 @@ def upload_form():
                 const result = await response.json();
 
                 if (response.ok) {
-                    showMessage('uploadMessage', 'success', `✅ ${result.message}`);
-                    fileInput.value = '';
-                    titleInput.value = '';
+                    showMessage('uploadMessage', 'success', '✓ ' + result.message);
+                    removeFile();
+                    document.getElementById('title').value = '';
                 } else {
-                    showMessage('uploadMessage', 'error', `❌ ${result.message || 'アップロードに失敗しました'}`);
+                    showMessage('uploadMessage', 'error', '✕ ' + (result.message || 'アップロードに失敗しました'));
+                    uploadBtn.disabled = false;
                 }
             } catch (error) {
-                showMessage('uploadMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
+                showMessage('uploadMessage', 'error', '✕ エラーが発生しました: ' + error.message);
+                uploadBtn.disabled = false;
             } finally {
-                submitBtn.disabled = false;
-                loader.style.display = 'none';
+                loader.classList.remove('show');
             }
         });
 
-        // 文書一覧を読み込む
+        // ファイル一覧を読み込む
         async function loadDocuments() {
             const loader = document.getElementById('listLoader');
-            const message = document.getElementById('listMessage');
-            const list = document.getElementById('documentsList');
+            const fileList = document.getElementById('fileList');
 
-            loader.style.display = 'block';
-            message.style.display = 'none';
-            list.innerHTML = '';
+            loader.classList.add('show');
+            hideMessage('listMessage');
+            fileList.innerHTML = '';
 
             try {
                 const response = await fetch('/documents');
@@ -1716,21 +1944,86 @@ def upload_form():
 
                 if (response.ok && result.status === 'success') {
                     if (result.documents.length === 0) {
-                        list.innerHTML = `
+                        fileList.innerHTML = `
                             <div class="empty-state">
-                                <div class="empty-state-icon">📭</div>
-                                <p>まだファイルがアップロードされていません</p>
+                                <div class="empty-icon">📂</div>
+                                <div class="empty-text">まだファイルがアップロードされていません</div>
                             </div>
                         `;
                     } else {
-                        list.innerHTML = result.documents.map(doc => `
-                            <div class="document-item">
-                                <div class="document-info">
-                                    <div class="document-title">
-                                        <span class="document-badge">${doc.source_type}</span>
-                                        ${doc.title}
+                        fileList.innerHTML = result.documents.map(doc => {
+                            const icon = getFileIcon(doc.title);
+                            const chunks = doc.chunk_count || 0;
+                            return `
+                            <div class="file-item">
+                                <div class="file-item-icon">${icon}</div>
+                                <div class="file-item-info">
+                                    <div class="file-item-title">${doc.title}</div>
+                                    <div class="file-item-meta">
+                                        <span class="file-item-badge">${doc.source_type}</span>
+                                        ${chunks} チャンク${doc.has_embeddings ? ' • Embedding済み' : ''}
                                     </div>
-                                    <div class="document-meta">
+                                </div>
+                                <div class="file-item-actions">
+                                    <button class="icon-btn" onclick="downloadDocument('${doc.source_id}', '${doc.source_type}')" title="ダウンロード">⬇️</button>
+                                    <button class="icon-btn" onclick="deleteDocument('${doc.source_id}', '${doc.source_type}')" title="削除">🗑️</button>
+                                </div>
+                            </div>
+                        `}).join('');
+                    }
+                } else {
+                    showMessage('listMessage', 'error', '✕ ファイル一覧の取得に失敗しました');
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', '✕ エラーが発生しました: ' + error.message);
+            } finally {
+                loader.classList.remove('show');
+            }
+        }
+
+        // ファイルダウンロード
+        function downloadDocument(sourceId, sourceType) {
+            const url = `/download-document/${sourceId}?source_type=${sourceType}`;
+            window.location.href = url;
+        }
+
+        // ファイル削除
+        async function deleteDocument(sourceId, sourceType) {
+            if (!confirm('このファイルを削除しますか？')) return;
+
+            try {
+                const response = await fetch(`/delete-document/${sourceId}?source_type=${sourceType}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('listMessage', 'success', '✓ ' + result.message);
+                    loadDocuments();
+                } else {
+                    showMessage('listMessage', 'error', '✕ ' + (result.message || '削除に失敗しました'));
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', '✕ エラーが発生しました: ' + error.message);
+            }
+        }
+
+        // メッセージ表示ヘルパー
+        function showMessage(elementId, type, text) {
+            const message = document.getElementById(elementId);
+            message.className = 'message show ' + type;
+            message.innerHTML = `
+                <span class="message-icon">${type === 'success' ? '✓' : '⚠'}</span>
+                <span>${text}</span>
+            `;
+        }
+
+        function hideMessage(elementId) {
+            const message = document.getElementById(elementId);
+            message.classList.remove('show');
+        }
+    </script>
                                         ${doc.chunk_count}チャンク | 最終更新: ${new Date(doc.last_updated).toLocaleString('ja-JP')}
                                     </div>
                                 </div>
@@ -1749,97 +2042,6 @@ def upload_form():
                     showMessage('listMessage', 'error', `❌ ${result.message || '読み込みに失敗しました'}`);
                 }
             } catch (error) {
-                showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
-            } finally {
-                loader.style.display = 'none';
-            }
-        }
-
-        // 文書をダウンロード
-        function downloadDocument(sourceId, sourceType) {
-            const url = `/download-document/${sourceId}?source_type=${sourceType}`;
-            window.location.href = url;
-        }
-
-        // 文書を削除
-        async function deleteDocument(sourceId, sourceType) {
-            if (!confirm('本当に削除しますか？この操作は取り消せません。')) {
-                return;
-            }
-
-            const loader = document.getElementById('listLoader');
-            const message = document.getElementById('listMessage');
-
-            loader.style.display = 'block';
-            message.style.display = 'none';
-
-            try {
-                const response = await fetch('/delete-document', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        source_id: sourceId,
-                        source_type: sourceType
-                    })
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    showMessage('listMessage', 'success', `✅ ${result.message}`);
-                    // 一覧を再読み込み
-                    setTimeout(() => loadDocuments(), 1000);
-                } else {
-                    showMessage('listMessage', 'error', `❌ ${result.message || '削除に失敗しました'}`);
-                }
-            } catch (error) {
-                showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
-            } finally {
-                loader.style.display = 'none';
-            }
-        }
-
-        // Embedding生成
-        async function generateEmbeddings() {
-            const loader = document.getElementById('listLoader');
-            const message = document.getElementById('listMessage');
-
-            loader.style.display = 'block';
-            message.style.display = 'none';
-
-            try {
-                const response = await fetch('/generate-embeddings', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    showMessage('listMessage', 'success', `✅ ${result.message}`);
-                    // 一覧を再読み込み
-                    setTimeout(() => loadDocuments(), 1000);
-                } else {
-                    showMessage('listMessage', 'error', `❌ ${result.message || 'Embedding生成に失敗しました'}`);
-                }
-            } catch (error) {
-                showMessage('listMessage', 'error', `❌ エラーが発生しました: ${error.message}`);
-            } finally {
-                loader.style.display = 'none';
-            }
-        }
-
-        // メッセージ表示
-        function showMessage(elementId, type, text) {
-            const message = document.getElementById(elementId);
-            message.className = 'message ' + type;
-            message.textContent = text;
-            message.style.display = 'block';
-        }
     </script>
 </body>
 </html>
