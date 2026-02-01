@@ -1937,74 +1937,7 @@ def upload_form():
     <script>
         let selectedFile = null;
 
-        // DOM要素
-        const dropArea = document.getElementById('dropArea');
-        const fileInput = document.getElementById('fileInput');
-        const selectedFileDiv = document.getElementById('selectedFile');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const uploadForm = document.getElementById('uploadForm');
-
-        // ドラッグ&ドロップイベント
-        dropArea.addEventListener('click', () => fileInput.click());
-
-        dropArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropArea.classList.add('dragover');
-        });
-
-        dropArea.addEventListener('dragleave', () => {
-            dropArea.classList.remove('dragover');
-        });
-
-        dropArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFileSelect(files[0]);
-            }
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFileSelect(e.target.files[0]);
-            }
-        });
-
-        function handleFileSelect(file) {
-            selectedFile = file;
-            const fileSize = (file.size / 1024).toFixed(1);
-            const fileIcon = getFileIcon(file.name);
-
-            document.getElementById('fileName').textContent = file.name;
-            document.getElementById('fileSize').textContent = `${fileSize} KB`;
-            document.querySelector('.file-icon').textContent = fileIcon;
-
-            selectedFileDiv.classList.add('show');
-            uploadBtn.disabled = false;
-
-            // FileInputに同じファイルを設定
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(file);
-            fileInput.files = dataTransfer.files;
-        }
-
-        function removeFile() {
-            selectedFile = null;
-            selectedFileDiv.classList.remove('show');
-            uploadBtn.disabled = true;
-            fileInput.value = '';
-        }
-
-        function getFileIcon(filename) {
-            const ext = filename.split('.').pop().toLowerCase();
-            if (ext === 'pdf') return '📕';
-            if (ext === 'xlsx' || ext === 'xls') return '📊';
-            if (ext === 'txt') return '📄';
-            return '📁';
-        }
-
-        // タブ切り替え
+        // タブ切り替え（グローバルスコープに定義）
         function switchTab(tabName) {
             // 全てのタブとコンテンツからactiveクラスを削除
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -2026,6 +1959,60 @@ def upload_form():
                 loadDocuments();
             }
         }
+
+        // DOMContentLoadedイベントで初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM要素
+            const dropArea = document.getElementById('dropArea');
+            const fileInput = document.getElementById('fileInput');
+            const selectedFileDiv = document.getElementById('selectedFile');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadForm = document.getElementById('uploadForm');
+
+            // ドラッグ&ドロップイベント
+            dropArea.addEventListener('click', () => fileInput.click());
+
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.classList.add('dragover');
+        });
+
+        dropArea.addEventListener('dragleave', () => {
+            dropArea.classList.remove('dragover');
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelectInternal(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelectInternal(e.target.files[0]);
+            }
+        });
+
+            function handleFileSelectInternal(file) {
+                selectedFile = file;
+                const fileSize = (file.size / 1024).toFixed(1);
+                const fileIcon = getFileIcon(file.name);
+
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = `${fileSize} KB`;
+                document.querySelector('.file-icon').textContent = fileIcon;
+
+                selectedFileDiv.classList.add('show');
+                uploadBtn.disabled = false;
+
+                // FileInputに同じファイルを設定
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                fileInput.files = dataTransfer.files;
+            }
 
         // アップロード処理
         uploadForm.addEventListener('submit', async (e) => {
@@ -2073,6 +2060,24 @@ def upload_form():
                 loader.classList.remove('show');
             }
         });
+        }); // DOMContentLoaded終了
+
+        // グローバル関数定義（onclick属性から呼ばれるため）
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            if (ext === 'pdf') return '📕';
+            if (ext === 'xlsx' || ext === 'xls') return '📊';
+            if (ext === 'txt') return '📄';
+            return '📁';
+        }
+
+        function removeFile() {
+            selectedFile = null;
+            document.getElementById('selectedFile').classList.remove('show');
+            document.getElementById('uploadBtn').disabled = true;
+            document.getElementById('fileInput').value = '';
+        }
 
         // ファイル一覧を読み込む
         async function loadDocuments() {
@@ -2130,7 +2135,7 @@ def upload_form():
 
         // 全てのEmbedding生成
         async function generateAllEmbeddings() {
-            if (!confirm('全てのEmbedding未生成ファイルに対してEmbeddingを生成しますか？\n\n※ファイル数によっては時間がかかる場合があります')) return;
+            if (!confirm('全てのEmbedding未生成ファイルに対してEmbeddingを生成しますか？\\n\\n※ファイル数によっては時間がかかる場合があります')) return;
 
             const loader = document.getElementById('listLoader');
             loader.classList.add('show');
