@@ -1325,6 +1325,89 @@ def generate_embeddings_for_pending():
             rag_service.return_db_connection(conn)
 
 
+@app.route("/generate-embeddings/<source_id>", methods=["POST"])
+def generate_embeddings_for_source(source_id):
+    """特定のsource_idに対してEmbeddingを生成（誰でもアクセス可能）"""
+    conn = None
+    try:
+        # 入力検証: source_id
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+$', source_id):
+            return jsonify({"status": "error", "message": "無効なsource_idです"}), 400
+
+        source_type = request.args.get('source_type', 'upload')
+        if source_type not in Config.ALLOWED_SOURCE_TYPES:
+            return jsonify({"status": "error", "message": "無効なsource_typeです"}), 400
+
+        if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
+            return jsonify({
+                "status": "error",
+                "message": "RAGサービスが無効です"
+            }), 503
+
+        # 接続プールから接続を取得
+        conn = rag_service.get_db_connection()
+        if not conn:
+            return jsonify({
+                "status": "error",
+                "message": "データベース接続の取得に失敗しました"
+            }), 500
+
+        # 指定されたsource_idのEmbedding未生成の文書を検索
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT DISTINCT d.id, d.content
+                FROM documents d
+                LEFT JOIN document_embeddings e ON d.id = e.document_id
+                WHERE e.document_id IS NULL
+                  AND d.source_id = %s
+                  AND d.source_type = %s
+                  AND d.chunk_index >= 0;
+            """, (source_id, source_type))
+            pending_docs = cursor.fetchall()
+
+        if not pending_docs:
+            return jsonify({
+                "status": "success",
+                "message": "このファイルのEmbeddingは既に生成済みです",
+                "generated_count": 0
+            })
+
+        # Embeddingを生成
+        generated_count = 0
+        for doc_id, content in pending_docs:
+            try:
+                embedding = rag_service._generate_embedding(content)
+                embedding_str = '[' + ','.join(map(str, embedding.tolist())) + ']'
+
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO document_embeddings (document_id, embedding) VALUES (%s, %s::vector)",
+                        (doc_id, embedding_str)
+                    )
+                conn.commit()
+                generated_count += 1
+            except Exception as e:
+                logger.error(f"Embedding生成エラー (doc_id={doc_id})", error=str(e))
+                continue
+
+        return jsonify({
+            "status": "success",
+            "message": f"{generated_count}個のチャンクのEmbeddingを生成しました",
+            "generated_count": generated_count
+        })
+
+    except Exception as e:
+        logger.error("Embedding生成に失敗しました", error=str(e), exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "Embedding生成に失敗しました")
+        }), 500
+    finally:
+        if conn:
+            rag_service.return_db_connection(conn)
+
+
 @app.route("/admin/collect-documents", methods=["POST"])
 @require_admin
 def collect_documents():
@@ -2003,6 +2086,7 @@ def upload_form():
                         fileList.innerHTML = result.documents.map(doc => {
                             const icon = getFileIcon(doc.title);
                             const chunks = doc.chunk_count || 0;
+                            const hasEmbeddings = doc.has_embeddings;
                             return `
                             <div class="file-item">
                                 <div class="file-item-icon">${icon}</div>
@@ -2010,10 +2094,11 @@ def upload_form():
                                     <div class="file-item-title">${doc.title}</div>
                                     <div class="file-item-meta">
                                         <span class="file-item-badge">${doc.source_type}</span>
-                                        ${chunks} チャンク${doc.has_embeddings ? ' • Embedding済み' : ''}
+                                        ${chunks} チャンク${hasEmbeddings ? ' • Embedding済み' : ''}
                                     </div>
                                 </div>
                                 <div class="file-item-actions">
+                                    ${!hasEmbeddings ? `<button class="icon-btn" onclick="generateEmbedding('${doc.source_id}', '${doc.source_type}')" title="Embedding生成">🔮</button>` : ''}
                                     <button class="icon-btn" onclick="downloadDocument('${doc.source_id}', '${doc.source_type}')" title="ダウンロード">⬇️</button>
                                     <button class="icon-btn" onclick="deleteDocument('${doc.source_id}', '${doc.source_type}')" title="削除">🗑️</button>
                                 </div>
@@ -2022,6 +2107,34 @@ def upload_form():
                     }
                 } else {
                     showMessage('listMessage', 'error', '✕ ファイル一覧の取得に失敗しました');
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', '✕ エラーが発生しました: ' + error.message);
+            } finally {
+                loader.classList.remove('show');
+            }
+        }
+
+        // Embedding生成
+        async function generateEmbedding(sourceId, sourceType) {
+            if (!confirm('このファイルのEmbeddingを生成しますか？')) return;
+
+            const loader = document.getElementById('listLoader');
+            loader.classList.add('show');
+            hideMessage('listMessage');
+
+            try {
+                const response = await fetch(`/generate-embeddings/${sourceId}?source_type=${sourceType}`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('listMessage', 'success', '✓ ' + result.message);
+                    loadDocuments();
+                } else {
+                    showMessage('listMessage', 'error', '✕ ' + (result.message || 'Embedding生成に失敗しました'));
                 }
             } catch (error) {
                 showMessage('listMessage', 'error', '✕ エラーが発生しました: ' + error.message);
