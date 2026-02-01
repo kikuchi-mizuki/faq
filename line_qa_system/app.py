@@ -2073,25 +2073,6 @@ def upload_form():
             message.classList.remove('show');
         }
     </script>
-                                        ${doc.chunk_count}チャンク | 最終更新: ${new Date(doc.last_updated).toLocaleString('ja-JP')}
-                                    </div>
-                                </div>
-                                <div class="document-actions">
-                                    <button class="primary" onclick="downloadDocument('${doc.source_id}', '${doc.source_type}')">
-                                        📥 ダウンロード
-                                    </button>
-                                    <button class="danger" onclick="deleteDocument('${doc.source_id}', '${doc.source_type}')">
-                                        🗑️ 削除
-                                    </button>
-                                </div>
-                            </div>
-                        `).join('');
-                    }
-                } else {
-                    showMessage('listMessage', 'error', `❌ ${result.message || '読み込みに失敗しました'}`);
-                }
-            } catch (error) {
-    </script>
 </body>
 </html>
     """
