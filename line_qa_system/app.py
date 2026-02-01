@@ -2006,12 +2006,22 @@ def upload_form():
 
         // タブ切り替え
         function switchTab(tabName) {
+            // 全てのタブとコンテンツからactiveクラスを削除
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-            event.target.classList.add('active');
+            // 選択されたタブにactiveクラスを追加
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => {
+                if (tab.textContent.includes(tabName === 'upload' ? 'アップロード' : 'ファイル一覧')) {
+                    tab.classList.add('active');
+                }
+            });
+
+            // 対応するコンテンツにactiveクラスを追加
             document.getElementById(tabName + '-tab').classList.add('active');
 
+            // ファイル一覧タブの場合はファイルを読み込む
             if (tabName === 'list') {
                 loadDocuments();
             }
