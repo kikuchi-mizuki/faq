@@ -53,14 +53,40 @@ Thumbs.db
 *.log
 logs/
 
-# Google Service Account
+# Google Service Account（機密情報）
 faq-account.json
-*.json
+*-service-account.json
+credentials*.json
 
-# Test files
-test_*.py
-upload_*.py
+# データベース
+*.db
+*.sqlite
+*.sqlite3
 
-# Temporary files
+# アップロードファイル
+uploads/
+uploaded_files/
+
+# テストデータ（サンプルファイルは管理対象）
+# test_data内のサンプルは.gitに含める
+
+# キャッシュ
+.cache/
+.pytest_cache/
+
+# 環境変数ファイル
+.env.local
+.env.*.local
+
+# バックアップファイル
+*.bak
+*.backup
+
+# Railwayの機密情報
+.railway/
+
+# 一時ファイル
 *.tmp
 *.temp
+temp/
+tmp/

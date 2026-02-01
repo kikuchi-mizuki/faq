@@ -990,9 +990,26 @@ def list_documents_public():
             rag_service.return_db_connection(conn)
 
 
-@app.route("/delete-document", methods=["POST"])
-def delete_document():
+@app.route("/delete-document/<source_id>", methods=["DELETE"])
+def delete_document(source_id):
     """文書を削除（公開エンドポイント）"""
+    # 入力検証: source_id
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', source_id):
+        return jsonify({
+            "status": "error",
+            "message": "無効なsource_idです"
+        }), 400
+
+    # 入力検証: source_type
+    source_type = request.args.get('source_type', 'upload')
+    ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual']
+    if source_type not in ALLOWED_SOURCE_TYPES:
+        return jsonify({
+            "status": "error",
+            "message": "無効なsource_typeです"
+        }), 400
+
     conn = None
     try:
         # クライアントIPアドレスを取得
@@ -1014,17 +1031,6 @@ def delete_document():
                 "status": "error",
                 "message": "RAGサービスが無効です"
             }), 503
-
-        # リクエストボディから削除対象を取得
-        data = request.get_json()
-        if not data or 'source_id' not in data:
-            return jsonify({
-                "status": "error",
-                "message": "source_idが必要です"
-            }), 400
-
-        source_id = data['source_id']
-        source_type = data.get('source_type')
 
         # 接続プールから接続を取得
         conn = rag_service.get_db_connection()
@@ -1108,6 +1114,24 @@ def delete_document():
 @app.route("/download-document/<source_id>", methods=["GET"])
 def download_document(source_id):
     """文書をダウンロード（公開エンドポイント）"""
+    # 入力検証: source_id
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', source_id):
+        return jsonify({
+            "status": "error",
+            "message": "無効なsource_idです"
+        }), 400
+
+    # 入力検証: source_type
+    source_type = request.args.get('source_type')
+    if source_type:
+        ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual']
+        if source_type not in ALLOWED_SOURCE_TYPES:
+            return jsonify({
+                "status": "error",
+                "message": "無効なsource_typeです"
+            }), 400
+
     conn = None
     try:
         # RAGサービスの状態確認
@@ -1116,9 +1140,6 @@ def download_document(source_id):
                 "status": "error",
                 "message": "RAGサービスが無効です"
             }), 503
-
-        # source_typeをクエリパラメータから取得（オプション）
-        source_type = request.args.get('source_type')
 
         # 接続プールから接続を取得
         conn = rag_service.get_db_connection()
