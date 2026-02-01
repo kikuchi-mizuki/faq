@@ -977,14 +977,16 @@ def list_documents_public():
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT
-                    source_type,
-                    source_id,
-                    title,
-                    COUNT(*) as chunk_count,
-                    MAX(created_at) as last_updated
-                FROM documents
-                WHERE chunk_index >= 0
-                GROUP BY source_type, source_id, title
+                    d.source_type,
+                    d.source_id,
+                    d.title,
+                    COUNT(DISTINCT d.id) as chunk_count,
+                    MAX(d.created_at) as last_updated,
+                    COUNT(DISTINCT e.document_id) > 0 as has_embeddings
+                FROM documents d
+                LEFT JOIN document_embeddings e ON d.id = e.document_id
+                WHERE d.chunk_index >= 0
+                GROUP BY d.source_type, d.source_id, d.title
                 ORDER BY last_updated DESC
                 LIMIT 100;
             """)
@@ -997,7 +999,8 @@ def list_documents_public():
                     "source_id": row[1],
                     "title": row[2],
                     "chunk_count": row[3],
-                    "last_updated": str(row[4])
+                    "last_updated": str(row[4]),
+                    "has_embeddings": bool(row[5])
                 })
 
             return jsonify({
@@ -1030,10 +1033,12 @@ def delete_document(source_id):
 
     # 入力検証: source_type
     source_type = request.args.get('source_type', 'upload')
+    logger.info(f"削除リクエスト: source_id={source_id}, source_type={source_type}, allowed={Config.ALLOWED_SOURCE_TYPES}")
     if source_type not in Config.ALLOWED_SOURCE_TYPES:
+        logger.error(f"無効なsource_type: {source_type} (allowed: {Config.ALLOWED_SOURCE_TYPES})")
         return jsonify({
             "status": "error",
-            "message": "無効なsource_typeです"
+            "message": f"無効なsource_typeです: {source_type}"
         }), 400
 
     conn = None
