@@ -1154,13 +1154,14 @@ def download_document(source_id):
         }), 400
 
     # 入力検証: source_type
-    source_type = request.args.get('source_type')
-    if source_type:
-        if source_type not in Config.ALLOWED_SOURCE_TYPES:
-            return jsonify({
-                "status": "error",
-                "message": "無効なsource_typeです"
-            }), 400
+    source_type = request.args.get('source_type', 'upload')
+    logger.info(f"ダウンロードリクエスト: source_id={source_id}, source_type={source_type}, allowed={Config.ALLOWED_SOURCE_TYPES}")
+    if source_type not in Config.ALLOWED_SOURCE_TYPES:
+        logger.error(f"無効なsource_type: {source_type} (allowed: {Config.ALLOWED_SOURCE_TYPES})")
+        return jsonify({
+            "status": "error",
+            "message": f"無効なsource_typeです: {source_type}"
+        }), 400
 
     conn = None
     try:
