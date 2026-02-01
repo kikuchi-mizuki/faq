@@ -109,7 +109,7 @@ class Config:
     EXCEL_MAX_SHEETS = int(os.environ.get("EXCEL_MAX_SHEETS", "10"))  # 最大シート数
 
     # 入力検証設定
-    ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual']  # 許可されるsource_type
+    ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual', 'test_upload']  # 許可されるsource_type
 
     # ハッシュ化設定
     HASH_SALT = os.environ.get("HASH_SALT", "line_qa_system_default_salt_change_in_production")
