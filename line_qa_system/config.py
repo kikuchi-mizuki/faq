@@ -104,6 +104,13 @@ class Config:
     MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "10"))  # 最大ファイルサイズ（MB）
     UPLOAD_RATE_LIMIT_PER_HOUR = int(os.environ.get("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))  # 1時間あたりの最大アップロード数
 
+    # Excel処理設定
+    EXCEL_MAX_ROWS_PER_SHEET = int(os.environ.get("EXCEL_MAX_ROWS_PER_SHEET", "100"))  # 1シートあたりの最大行数
+    EXCEL_MAX_SHEETS = int(os.environ.get("EXCEL_MAX_SHEETS", "10"))  # 最大シート数
+
+    # 入力検証設定
+    ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual']  # 許可されるsource_type
+
     # ハッシュ化設定
     HASH_SALT = os.environ.get("HASH_SALT", "line_qa_system_default_salt_change_in_production")
 

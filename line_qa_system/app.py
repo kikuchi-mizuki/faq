@@ -12,6 +12,7 @@ import threading
 from datetime import datetime
 from typing import Dict, Any, Optional
 from functools import wraps
+from contextlib import contextmanager
 
 import structlog
 from flask import Flask, request, jsonify, abort
@@ -115,6 +116,32 @@ def safe_error_message(error: Exception, default_message: str = "処理中にエ
     else:
         # 開発環境では詳細なエラー情報を返す
         return f"{default_message}: {str(error)}"
+
+@contextmanager
+def rag_db_connection():
+    """
+    RAGデータベース接続のコンテキストマネージャ
+
+    使用例:
+        with rag_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT ...")
+
+    Raises:
+        ValueError: RAGサービスが無効な場合
+        ConnectionError: データベース接続の取得に失敗した場合
+    """
+    if not rag_service or not rag_service.is_enabled or not rag_service.db_pool:
+        raise ValueError("RAGサービスが無効です")
+
+    conn = rag_service.get_db_connection()
+    if not conn:
+        raise ConnectionError("データベース接続の取得に失敗しました")
+
+    try:
+        yield conn
+    finally:
+        rag_service.return_db_connection(conn)
 
 def initialize_services():
     """サービスの初期化（遅延初期化）"""
@@ -1003,8 +1030,7 @@ def delete_document(source_id):
 
     # 入力検証: source_type
     source_type = request.args.get('source_type', 'upload')
-    ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual']
-    if source_type not in ALLOWED_SOURCE_TYPES:
+    if source_type not in Config.ALLOWED_SOURCE_TYPES:
         return jsonify({
             "status": "error",
             "message": "無効なsource_typeです"
@@ -1125,8 +1151,7 @@ def download_document(source_id):
     # 入力検証: source_type
     source_type = request.args.get('source_type')
     if source_type:
-        ALLOWED_SOURCE_TYPES = ['upload', 'google_drive', 'manual']
-        if source_type not in ALLOWED_SOURCE_TYPES:
+        if source_type not in Config.ALLOWED_SOURCE_TYPES:
             return jsonify({
                 "status": "error",
                 "message": "無効なsource_typeです"
@@ -1355,13 +1380,16 @@ def collect_documents():
             logger.error("文書収集に失敗しました", error=str(e), exc_info=True)
             return jsonify({
                 "status": "error",
-                "message": f"文書収集エラー: {str(e)}"
+                "message": safe_error_message(e, "文書収集中にエラーが発生しました")
             }), 500
 
     except Exception as e:
         print(f"❌ APIエラー: {e}")
         logger.error("文書収集APIでエラーが発生しました", error=str(e), exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": safe_error_message(e, "文書収集APIでエラーが発生しました")
+        }), 500
 
 
 @app.route("/upload", methods=["GET"])
@@ -2072,6 +2100,14 @@ def upload_form():
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
+    # XSS対策: Content Security Policy
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"
+    # クリックジャッキング対策
+    response.headers['X-Frame-Options'] = 'DENY'
+    # MIME type sniffing対策
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # XSS保護
+    response.headers['X-XSS-Protection'] = '1; mode=block'
     return response
 
 
@@ -2181,14 +2217,12 @@ def upload_document_public():
                 workbook = openpyxl.load_workbook(excel_file, data_only=True, read_only=True)
 
                 text_parts = []
-                MAX_ROWS_PER_SHEET = 100  # 1シートあたりの最大行数（タイムアウト対策）
-                MAX_SHEETS = 10  # 最大シート数
 
                 sheet_count = 0
                 for sheet_name in workbook.sheetnames:
                     sheet_count += 1
-                    if sheet_count > MAX_SHEETS:
-                        text_parts.append(f"... (残り{len(workbook.sheetnames) - MAX_SHEETS}シートは省略されました)")
+                    if sheet_count > Config.EXCEL_MAX_SHEETS:
+                        text_parts.append(f"... (残り{len(workbook.sheetnames) - Config.EXCEL_MAX_SHEETS}シートは省略されました)")
                         break
                     worksheet = workbook[sheet_name]
                     sheet_text = [f"=== シート: {sheet_name} ==="]
@@ -2202,10 +2236,10 @@ def upload_document_public():
                     if headers:
                         sheet_text.append(f"列: {', '.join(headers)}")
 
-                    # データ行（最大100行まで - タイムアウト対策）
+                    # データ行（最大行数まで - タイムアウト対策）
                     row_count = 0
                     # max_rowで明示的に行数を制限（read_only=Trueでも確実に高速化）
-                    max_row_limit = min(MAX_ROWS_PER_SHEET + 1, worksheet.max_row)  # ヘッダー+100行
+                    max_row_limit = min(Config.EXCEL_MAX_ROWS_PER_SHEET + 1, worksheet.max_row)  # ヘッダー+設定値
 
                     for row_num, row in enumerate(worksheet.iter_rows(min_row=2, max_row=max_row_limit, values_only=True), 2):
                         row_values = [str(val) if val is not None else "" for val in row]
@@ -2218,7 +2252,7 @@ def upload_document_public():
                     # 省略された行がある場合は通知
                     if worksheet.max_row > max_row_limit:
                         omitted_rows = worksheet.max_row - max_row_limit
-                        sheet_text.append(f"... (残り{omitted_rows}行は省略されました。最大{MAX_ROWS_PER_SHEET}行まで処理)")
+                        sheet_text.append(f"... (残り{omitted_rows}行は省略されました。最大{Config.EXCEL_MAX_ROWS_PER_SHEET}行まで処理)")
 
                     text_parts.append("\n".join(sheet_text))
 
