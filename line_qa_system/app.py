@@ -1916,7 +1916,10 @@ def upload_form():
             <div id="list-tab" class="tab-content">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h2 style="font-size: 18px; font-weight: 500; color: #202124; margin: 0;">アップロード済みファイル</h2>
-                    <button onclick="loadDocuments()" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;">🔄 更新</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="generateAllEmbeddings()" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">🔮 全てのEmbedding生成</button>
+                        <button onclick="loadDocuments()" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;">🔄 更新</button>
+                    </div>
                 </div>
 
                 <div id="listLoader" class="loader">
@@ -2115,7 +2118,35 @@ def upload_form():
             }
         }
 
-        // Embedding生成
+        // 全てのEmbedding生成
+        async function generateAllEmbeddings() {
+            if (!confirm('全てのEmbedding未生成ファイルに対してEmbeddingを生成しますか？\n\n※ファイル数によっては時間がかかる場合があります')) return;
+
+            const loader = document.getElementById('listLoader');
+            loader.classList.add('show');
+            hideMessage('listMessage');
+
+            try {
+                const response = await fetch('/generate-embeddings', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('listMessage', 'success', '✓ ' + result.message);
+                    loadDocuments();
+                } else {
+                    showMessage('listMessage', 'error', '✕ ' + (result.message || 'Embedding生成に失敗しました'));
+                }
+            } catch (error) {
+                showMessage('listMessage', 'error', '✕ エラーが発生しました: ' + error.message);
+            } finally {
+                loader.classList.remove('show');
+            }
+        }
+
+        // 個別ファイルのEmbedding生成
         async function generateEmbedding(sourceId, sourceType) {
             if (!confirm('このファイルのEmbeddingを生成しますか？')) return;
 
